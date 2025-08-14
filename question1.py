@@ -42,39 +42,73 @@ test = 0
 # @param max_timestep The max timestep of this episode.
 # @return path A list of (x,y) tuple.
 def get_path(start: tuple, start_direction: int, goal: tuple, rail: GridTransitionMap, max_timestep: int):
-    ############
-    # Below is an dummy path finding implementation,
-    # which always choose the first available transition of current state.
-    #
-    # Replace these with your implementation and return a list of (x,y) tuple as your plan.
-    # Your plan should avoid conflicts with paths in existing_paths.
-    ############
-    path = []
-    loc = start
-    direction = start_direction
-    for t in range(0, int(max_timestep/10)):
-        path.append(loc)
-        if loc == goal:
-            break;
-        valid_transitions = rail.get_transitions(loc[0],loc[1],direction)
-        for i in range(0,len(valid_transitions)):
-            if valid_transitions[i]:
-                new_x=loc[0]
-                new_y=loc[1]
-                action = i
-                if action == Directions.NORTH:
-                    new_x -= 1
-                elif action == Directions.EAST:
-                    new_y += 1
-                elif action == Directions.SOUTH:
-                    new_x += 1
-                elif action == Directions.WEST:
-                    new_y -= 1
-                loc = (new_x,new_y)
-                direction = action
+    # 단일 에이전트 최단 경로: 방향을 상태에 포함한 A* 탐색
+    from heapq import heappush, heappop
 
-                break;
-    return path
+    if start == goal:
+        return [start]
+
+    def heuristic(x: int, y: int) -> int:
+        return abs(x - goal[0]) + abs(y - goal[1])
+
+    # 우선순위 큐: (f, g, (x, y, dir))
+    open_heap = []
+    start_state = (start[0], start[1], start_direction)
+    heappush(open_heap, (heuristic(start[0], start[1]), 0, start_state))
+
+    # 최단 g 기록과 부모 추적
+    best_g = {start_state: 0}
+    parent = {start_state: None}
+
+    goal_state = None
+
+    # 방문 상한: 필요 시 max_timestep를 안전 장치로 사용
+    search_limit = max_timestep if max_timestep and max_timestep > 0 else 10**9
+
+    while open_heap:
+        f, g, (x, y, d) = heappop(open_heap)
+        if g > search_limit:
+            break
+        # 위치만 목표에 도달하면 종료(방향 무관)
+        if (x, y) == goal:
+            goal_state = (x, y, d)
+            break
+
+        # 가능한 전이 확장
+        valid = rail.get_transitions(x, y, d)
+        for action in range(0, len(valid)):
+            if not valid[action]:
+                continue
+            nx, ny = x, y
+            if action == Directions.NORTH:
+                nx -= 1
+            elif action == Directions.EAST:
+                ny += 1
+            elif action == Directions.SOUTH:
+                nx += 1
+            elif action == Directions.WEST:
+                ny -= 1
+
+            nd = action
+            ng = g + 1
+            state = (nx, ny, nd)
+            if ng < best_g.get(state, 1 << 60):
+                best_g[state] = ng
+                parent[state] = (x, y, d)
+                heappush(open_heap, (ng + heuristic(nx, ny), ng, state))
+
+    # 경로 복원
+    if goal_state is None:
+        return []
+
+    rev_path = []
+    s = goal_state
+    while s is not None:
+        rev_path.append((s[0], s[1]))
+        s = parent[s]
+    rev_path.reverse()
+
+    return rev_path
 
 
 #########################
