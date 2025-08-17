@@ -3,6 +3,7 @@ This is the python script for question 1. In this script, you are required to im
 """
 from lib_piglet.utils.tools import eprint
 import glob, os, sys
+from heapq import heappush, heappop
 
 #import necessary modules that this python scripts need.
 try:
@@ -42,43 +43,47 @@ test = 0
 # @param max_timestep The max timestep of this episode.
 # @return path A list of (x,y) tuple.
 def get_path(start: tuple, start_direction: int, goal: tuple, rail: GridTransitionMap, max_timestep: int):
-    # 단일 에이전트 최단 경로: 방향을 상태에 포함한 A* 탐색
-    from heapq import heappush, heappop
-
+    # Single-agent shortest path: A* over (x, y, direction, depth); optional turn penalty
+    
     if start == goal:
         return [start]
 
     def heuristic(x: int, y: int) -> int:
         return abs(x - goal[0]) + abs(y - goal[1])
 
-    # 우선순위 큐: (f, g, (x, y, dir))
+    # Priority queue: (f, g, state)
     open_heap = []
-    start_state = (start[0], start[1], start_direction)
+    # Include depth in the state (x, y, dir, depth)
+    start_state = (start[0], start[1], start_direction, 0) 
     heappush(open_heap, (heuristic(start[0], start[1]), 0, start_state))
 
-    # 최단 g 기록과 부모 추적
+    # Track best g-costs and parents for reconstruction
     best_g = {start_state: 0}
     parent = {start_state: None}
 
     goal_state = None
 
-    # 방문 상한: 필요 시 max_timestep를 안전 장치로 사용
-    search_limit = max_timestep if max_timestep and max_timestep > 0 else 10**9
+    # Search bound: interpret max_timestep as the maximum number of moves (steps)
+    search_limit = max_timestep if max_timestep and max_timestep > 0 else float('inf')
 
     while open_heap:
-        f, g, (x, y, d) = heappop(open_heap)
-        if g > search_limit:
-            break
-        # 위치만 목표에 도달하면 종료(방향 무관)
+        f, g, (x, y, d, depth) = heappop(open_heap)
+        
+        # Compare bound to depth (number of moves) rather than g-cost
+        if depth >= search_limit:
+            continue # continue를 사용하여 이 노드의 확장을 건너뜀
+
+        # Stop when position reaches goal (direction agnostic)
         if (x, y) == goal:
-            goal_state = (x, y, d)
+            goal_state = (x, y, d, depth)
             break
 
-        # 가능한 전이 확장
+        # Expand valid transitions
         valid = rail.get_transitions(x, y, d)
         for action in range(0, len(valid)):
             if not valid[action]:
                 continue
+                
             nx, ny = x, y
             if action == Directions.NORTH:
                 nx -= 1
@@ -90,14 +95,23 @@ def get_path(start: tuple, start_direction: int, goal: tuple, rail: GridTransiti
                 ny -= 1
 
             nd = action
-            ng = g + 1
-            state = (nx, ny, nd)
-            if ng < best_g.get(state, 1 << 60):
+            
+            cost = 1
+            if d != action:
+                cost = 2
+            
+            ng = g + cost
+            
+            # Propagate incremented depth to the next state
+            next_depth = depth + 1
+            state = (nx, ny, nd, next_depth)
+
+            if ng < best_g.get(state, float('inf')):
                 best_g[state] = ng
-                parent[state] = (x, y, d)
+                parent[state] = (x, y, d, depth)
                 heappush(open_heap, (ng + heuristic(nx, ny), ng, state))
 
-    # 경로 복원
+    # Reconstruct path
     if goal_state is None:
         return []
 
@@ -124,22 +138,3 @@ if __name__ == "__main__":
             test_cases = glob.glob(os.path.join(script_path,"single_test_case/level{}_test_{}.pkl".format(level, test)))
         test_cases.sort()
         evaluator(get_path,test_cases,debug,visualizer,1)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
