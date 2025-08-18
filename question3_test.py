@@ -20,21 +20,13 @@ except Exception as e:
 #########################
 
 # Set these debug option to True if you want more information printed
-#debug = False
-#visualizer = False
+debug = False
+visualizer = False
 
 # If you want to test on specific instance, turn test_single_instance to True and specify the level and test number
-#test_single_instance = False
-#level = 0
-#test = 0
-
-debug = True
-visualizer = True
-
-# If you want to test on specific instance, turn test_single_instance to True and specify the level and test number
-test_single_instance = True
-level = 1
-test = 5
+test_single_instance = False
+level = 0
+test = 0
 
 #########################
 # Reimplementing the content in get_path() function and replan() function.
@@ -107,35 +99,51 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
             while len(rev) <= horizon:
                 rev.append(start)
             return rev
+        # 에이전트별 탐색 지평선 축소: 마감 시각 또는 최단거리 기반 버퍼
+        h0 = heuristic(start, goal)
+        local_horizon = horizon
+        if deadline is not None:
+            local_horizon = min(local_horizon, max(h0, deadline) + 64)
+        else:
+            local_horizon = min(local_horizon, h0 + 256)
+
         open_heap = []
         h0 = heuristic(start, goal)
         # (f, late_flag, h, turn_bias, g, state)
         late0 = 1 if (0 + h0 > deadline) else 0 if deadline is not None else 0
-        heappush(open_heap, (h0, late0, h0, 0, 0, (start[0], start[1], start_dir, 0)))
+        WEIGHT = 1.1
+        heappush(open_heap, (WEIGHT * h0, late0, h0, 0, 0, (start[0], start[1], start_dir, 0)))
         best_g = {(start[0], start[1], start_dir, 0): 0}
+        best_g_any = {(start[0], start[1], 0): 0}
         parent = {(start[0], start[1], start_dir, 0): None}
         goal_state = None
         WAIT_PENALTY = 0.35
         TURN_COST = 0.05
+        MAX_NODES = 120000
+        expanded = 0
         while open_heap:
             f, late_flag, h, tb, g, (x, y, d, t) = heappop(open_heap)
-            if t > horizon:
+            if t > local_horizon:
                 break
             if (x, y) == goal:
                 goal_state = (x, y, d, t)
                 break
+            expanded += 1
+            if expanded > MAX_NODES:
+                break
             # wait: 낮은 우선순위(턴 바이어스 2) + 대기 패널티
             nt = t + 1
-            if nt <= horizon and not is_conflict((x, y), (x, y), nt):
+            if nt <= local_horizon and not is_conflict((x, y), (x, y), nt):
                 s = (x, y, d, nt)
                 ng = g + 1
                 nh = heuristic((x, y), goal)
-                if ng < best_g.get(s, 1 << 60):
+                if ng < best_g.get(s, 1 << 60) and ng < best_g_any.get((x, y, nt), 1 << 60):
                     best_g[s] = ng
+                    best_g_any[(x, y, nt)] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
                     late_boost = 1.5 if late == 1 else 1.0
-                    heappush(open_heap, (ng + nh + WAIT_PENALTY * late_boost, late, nh, 2, ng, s))
+                    heappush(open_heap, (ng + WEIGHT * nh + WAIT_PENALTY * late_boost, late, nh, 2, ng, s))
 
             # move
             valid = get_valid(x, y, d)
@@ -157,13 +165,15 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
                 ng = g + 1
                 nh = heuristic((nx, ny), goal)
                 turn_bias = 0 if action == d else 1
-                if ng < best_g.get(s, 1 << 60):
+                if ng < best_g.get(s, 1 << 60) and ng < best_g_any.get((nx, ny, t + 1), 1 << 60):
                     best_g[s] = ng
+                    best_g_any[(nx, ny, t + 1)] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
                     extra = 0.0 if action == d else TURN_COST
-                    heappush(open_heap, (ng + nh + extra, late, nh, turn_bias, ng, s))
+                    heappush(open_heap, (ng + WEIGHT * nh + extra, late, nh, turn_bias, ng, s))
         if goal_state is None:
+            # 실패 시 간단 경로로 폴백
             return []
         rev = []
         s = goal_state

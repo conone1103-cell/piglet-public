@@ -20,21 +20,13 @@ except Exception as e:
 #########################
 
 # Set these debug option to True if you want more information printed
-#debug = False
-#visualizer = False
+debug = False
+visualizer = False
 
 # If you want to test on specific instance, turn test_single_instance to True and specify the level and test number
-#test_single_instance = False
-#level = 0
-#test = 0
-
-debug = True
-visualizer = True
-
-# If you want to test on specific instance, turn test_single_instance to True and specify the level and test number
-test_single_instance = True
-level = 1
-test = 5
+test_single_instance = False
+level = 0
+test = 0
 
 #########################
 # Reimplementing the content in get_path() function and replan() function.
