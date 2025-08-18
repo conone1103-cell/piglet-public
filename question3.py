@@ -20,21 +20,13 @@ except Exception as e:
 #########################
 
 # Set these debug option to True if you want more information printed
-#debug = False
-#visualizer = False
+debug = False
+visualizer = False
 
 # If you want to test on specific instance, turn test_single_instance to True and specify the level and test number
-#test_single_instance = False
-#level = 0
-#test = 0
-
-debug = True
-visualizer = True
-
-# If you want to test on specific instance, turn test_single_instance to True and specify the level and test number
-test_single_instance = True
-level = 1
-test = 5
+test_single_instance = False
+level = 0
+test = 0
 
 #########################
 # Reimplementing the content in get_path() function and replan() function.
@@ -71,41 +63,21 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
     horizon = max_timestep if max_timestep and max_timestep > 0 else 10**9
     node_reserved = {}
     edge_reserved = {}
-##
     # 목표 셀 영구 점유는 성능 저하 가능 → 제거(도착 시점만 점유)
-##
-    stay_reserved_earliest = {}  # node -> earliest time from which the node stays occupied
-##
 
     def reserve_path(path: list):
         for t in range(0, len(path)):
             node_reserved.setdefault(t, set()).add(path[t])
             if t + 1 < len(path):
                 edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
-##
         # 목표 도달 이후는 별도 영구 점유하지 않음
-##
-        if len(path) > 0:
-            last = path[-1]
-            arrive_t = len(path) - 1
-            prev = stay_reserved_earliest.get(last)
-            if prev is None or arrive_t < prev:
-                stay_reserved_earliest[last] = arrive_t
-##
 
     def is_conflict(curr: tuple, nxt: tuple, t_next: int) -> bool:
         if nxt in node_reserved.get(t_next, set()):
             return True
         if (nxt, curr) in edge_reserved.get(t_next, set()):
             return True
-##
         # 목표의 장기 점유 제약은 제거
-##
-        # Prevent collisions due to extended goal occupancy
-        earliest = stay_reserved_earliest.get(nxt)
-        if earliest is not None and t_next >= earliest:
-            return True
-##
         return False
 
     def heuristic(a: tuple, b: tuple) -> int:
@@ -122,11 +94,7 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
 
     def plan_single(start: tuple, start_dir: int, goal: tuple, deadline: int) -> list:
         if start == goal:
-##
             # 시작=목표인 경우 전체 에피소드 동안 제자리 유지로 패딩
-##
-            # If start equals goal, pad by staying in place for the whole horizon
-##
             rev = [start]
             while len(rev) <= horizon:
                 rev.append(start)
@@ -139,11 +107,8 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
         best_g = {(start[0], start[1], start_dir, 0): 0}
         parent = {(start[0], start[1], start_dir, 0): None}
         goal_state = None
-##
         WAIT_PENALTY = 0.35
         TURN_COST = 0.05
-##
-##
         while open_heap:
             f, late_flag, h, tb, g, (x, y, d, t) = heappop(open_heap)
             if t > horizon:
@@ -151,11 +116,7 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
             if (x, y) == goal:
                 goal_state = (x, y, d, t)
                 break
-##
             # wait: 낮은 우선순위(턴 바이어스 2) + 대기 패널티
-##
-            # Wait action (lower priority via turn bias)
-##
             nt = t + 1
             if nt <= horizon and not is_conflict((x, y), (x, y), nt):
                 s = (x, y, d, nt)
@@ -165,12 +126,8 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
-##
                     late_boost = 1.5 if late == 1 else 1.0
                     heappush(open_heap, (ng + nh + WAIT_PENALTY * late_boost, late, nh, 2, ng, s))
-##
-                    heappush(open_heap, (ng + nh, late, nh, 2, ng, s))
-##
 
             # move
             valid = get_valid(x, y, d)
@@ -187,11 +144,7 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
                 elif action == Directions.WEST:
                     ny -= 1
                 if is_conflict((x, y), (nx, ny), t + 1):
-##
                     continue
-##
-                        continue
-##
                 s = (nx, ny, action, t + 1)
                 ng = g + 1
                 nh = heuristic((nx, ny), goal)
@@ -200,12 +153,8 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
-
                     extra = 0.0 if action == d else TURN_COST
                     heappush(open_heap, (ng + nh + extra, late, nh, turn_bias, ng, s))
-
-                    heappush(open_heap, (ng + nh, late, nh, turn_bias, ng, s))
-
         if goal_state is None:
             return []
         rev = []
@@ -214,32 +163,15 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
             rev.append((s[0], s[1]))
             s = parent[s]
         rev.reverse()
-
         # 도착까지만 반환(패딩 금지) → SIC 증가 방지
-
-        # 목표 도달 이후 패딩
-        if len(rev) > 0:
-            last = rev[-1]
-            while len(rev) <= horizon:
-                rev.append(last)
-
         return rev
 
     path_all = [[] for _ in range(num_agents)]
     for aid in priorities:
         ddl = getattr(agents[aid], 'deadline', None)
         p = plan_single(agents[aid].initial_position, agents[aid].initial_direction, agents[aid].target, ddl if ddl is not None else 1 << 30)
-
         if len(p) == 0:
             p = [agents[aid].initial_position]
-
-        # 패딩: 항상 horizon까지 길이 보장
-        if len(p) == 0:
-            p = [agents[aid].initial_position]
-        last = p[-1]
-        while len(p) <= horizon:
-            p.append(last)
-
         path_all[aid] = p
         reserve_path(p)
     return path_all
@@ -269,16 +201,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
             node_reserved.setdefault(t, set()).add(path[t])
             if t + 1 < len(path):
                 edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
-
         # 기존 로직과의 호환을 위해 키는 유지하지만, 실제 충돌 판정에서 사용하지 않음
-
-        if len(path) > 0:
-            last = path[-1]
-            arrive_t = len(path) - 1
-            prev = stay_reserved_earliest.get(last)
-            if prev is None or arrive_t < prev:
-                stay_reserved_earliest[last] = arrive_t
-
 
     # 재계획 대상 외 에이전트는 경로 고정(현재 시점 이후 예약)
     num_agents = len(agents)
