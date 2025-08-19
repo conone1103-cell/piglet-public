@@ -1,16 +1,19 @@
 from lib_piglet.utils.tools import eprint
 from typing import List, Tuple
-import glob, os, sys
+import glob, os, sys,time,json
 
 #import necessary modules that this python scripts need.
 try:
     from flatland.core.transition_map import GridTransitionMap
     from flatland.envs.agent_utils import EnvAgent
-    from flatland.utils.controller import Directions, evaluator, remote_evaluator
+    from flatland.utils.controller import get_action, Train_Actions, Directions, check_conflict, path_controller, evaluator, remote_evaluator
 except Exception as e:
     eprint("Cannot load flatland modules!")
     eprint(e)
     exit(1)
+
+
+
 
 #########################
 # Debugger and visualizer options
@@ -34,14 +37,9 @@ test = 0
 #########################
 
 # Performance tuning constants and helpers
-WAIT_PENALTY = 0.15  # 0.35→0.15로 감소: 대기를 덜 꺼리도록 하여 충돌 회피 향상
+WAIT_PENALTY = 0.35
 TURN_COST = 0.05
-LOCAL_HORIZON_PADDING = 256  # 128→256으로 확장: 더 넓은 탐색으로 해결책 발견 확률 증가
-K_HOLD = 2  # 3→2로 감소: 과도한 대기 제약 완화
-TABOO_TICKS = 3  # 5→3으로 감소: 실패 셀 금지 기간 단축
-MAX_COST = 1 << 30
-LARGE_G = 1 << 60
-INFINITE_HORIZON = 10**9
+LOCAL_HORIZON_PADDING = 128
 
 # Global transition cache keyed by rail id
 _TRANSITION_CACHE = {}
@@ -68,32 +66,6 @@ def step(x: int, y: int, action: int):
     dx, dy = DIR_DELTAS.get(action, (0, 0))
     return x + dx, y + dy
 
-# Common helper functions
-def heuristic(a: tuple, b: tuple) -> int:
-    """Manhattan distance heuristic with None handling"""
-    if a is None or b is None:
-        return MAX_COST
-    return abs(a[0] - b[0]) + abs(a[1] - b[1])
-
-def create_reservation_system():
-    """Create reservation tables for path planning"""
-    return {}, {}  # node_reserved, edge_reserved
-
-def reserve_path_in_tables(path: list, node_reserved: dict, edge_reserved: dict, from_t: int = 0):
-    """Reserve a path in the reservation tables"""
-    for t in range(from_t, len(path)):
-        node_reserved.setdefault(t, set()).add(path[t])
-        if t + 1 < len(path):
-            edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
-
-def is_conflict_in_tables(curr: tuple, nxt: tuple, t_next: int, node_reserved: dict, edge_reserved: dict) -> bool:
-    """Check if movement conflicts with reservations"""
-    if nxt in node_reserved.get(t_next, set()):
-        return True
-    if (nxt, curr) in edge_reserved.get(t_next, set()):
-        return True
-    return False
-
 
 # This function return a list of location tuple as the solution.
 # @param env The flatland railway environment
@@ -113,21 +85,50 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
         ddl = getattr(agents[i], 'deadline', None)
         h0 = manhattan(agents[i].initial_position, agents[i].target)
         if ddl is None:
-            return MAX_COST
+            return 1 << 30
         return ddl - h0
     # slack 오름차순, slack이 같으면 거리가 먼 순(내림차순)으로 정렬
     priorities.sort(key=lambda i: (slack_for(i), -manhattan(agents[i].initial_position, agents[i].target)))
 
-    horizon = max_timestep if max_timestep and max_timestep > 0 else INFINITE_HORIZON
-    node_reserved, edge_reserved = create_reservation_system()
+    horizon = max_timestep if max_timestep and max_timestep > 0 else 10**9
+    node_reserved = {}
+    edge_reserved = {}
+    # 목표 셀 영구 점유는 성능 저하 가능 → 제거(도착 시점만 점유)
 
+    def reserve_path(path: list):
+        for t in range(0, len(path)):
+            node_reserved.setdefault(t, set()).add(path[t])
+            if t + 1 < len(path):
+                edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
+        # 목표 도달 이후는 별도 영구 점유하지 않음
+
+    def is_conflict(curr: tuple, nxt: tuple, t_next: int) -> bool:
+        if nxt in node_reserved.get(t_next, set()):
+            return True
+        if (nxt, curr) in edge_reserved.get(t_next, set()):
+            return True
+        # 목표의 장기 점유 제약은 제거
+        return False
+
+    def heuristic(a: tuple, b: tuple) -> int:
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    transition_cache = {}
     def get_valid(x: int, y: int, d: int):
-        return get_transitions_cached(rail, x, y, d)
+        key = (x, y, d)
+        v = transition_cache.get(key)
+        if v is None:
+            v = rail.get_transitions(x, y, d)
+            transition_cache[key] = v
+        return v
 
     def plan_single(start: tuple, start_dir: int, goal: tuple, deadline: int) -> list:
         if start == goal:
-            # 시작=목표인 경우 단일 위치만 반환 (패딩 제거로 성능 향상)
-            return [start]
+            # 시작=목표인 경우 전체 에피소드 동안 제자리 유지로 패딩
+            rev = [start]
+            while len(rev) <= horizon:
+                rev.append(start)
+            return rev
         open_heap = []
         h0 = heuristic(start, goal)
         # (f, late_flag, h, turn_bias, g, state)
@@ -136,7 +137,8 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
         best_g = {(start[0], start[1], start_dir, 0): 0}
         parent = {(start[0], start[1], start_dir, 0): None}
         goal_state = None
-
+        WAIT_PENALTY_LOCAL = 0.35
+        TURN_COST_LOCAL = 0.05
         while open_heap:
             f, late_flag, h, tb, g, (x, y, d, t) = heappop(open_heap)
             if t > horizon:
@@ -146,34 +148,42 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
                 break
             # wait: 낮은 우선순위(턴 바이어스 2) + 대기 패널티
             nt = t + 1
-            if nt <= horizon and not is_conflict_in_tables((x, y), (x, y), nt, node_reserved, edge_reserved):
+            if nt <= horizon and not is_conflict((x, y), (x, y), nt):
                 s = (x, y, d, nt)
                 ng = g + 1
                 nh = heuristic((x, y), goal)
-                if ng < best_g.get(s, LARGE_G):
+                if ng < best_g.get(s, 1 << 60):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
                     late_boost = 1.5 if late == 1 else 1.0
-                    heappush(open_heap, (ng + nh + WAIT_PENALTY * late_boost, late, nh, 2, ng, s))
+                    heappush(open_heap, (ng + nh + WAIT_PENALTY_LOCAL * late_boost, late, nh, 2, ng, s))
 
             # move
             valid = get_valid(x, y, d)
             for action in range(0, len(valid)):
                 if not valid[action]:
                     continue
-                nx, ny = step(x, y, action)
-                if is_conflict_in_tables((x, y), (nx, ny), t + 1, node_reserved, edge_reserved):
+                nx, ny = x, y
+                if action == Directions.NORTH:
+                    nx -= 1
+                elif action == Directions.EAST:
+                    ny += 1
+                elif action == Directions.SOUTH:
+                    nx += 1
+                elif action == Directions.WEST:
+                    ny -= 1
+                if is_conflict((x, y), (nx, ny), t + 1):
                     continue
                 s = (nx, ny, action, t + 1)
                 ng = g + 1
                 nh = heuristic((nx, ny), goal)
                 turn_bias = 0 if action == d else 1
-                if ng < best_g.get(s, LARGE_G):
+                if ng < best_g.get(s, 1 << 60):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
-                    extra = 0.0 if action == d else TURN_COST
+                    extra = 0.0 if action == d else TURN_COST_LOCAL
                     heappush(open_heap, (ng + nh + extra, late, nh, turn_bias, ng, s))
         if goal_state is None:
             return []
@@ -189,11 +199,11 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
     path_all = [[] for _ in range(num_agents)]
     for aid in priorities:
         ddl = getattr(agents[aid], 'deadline', None)
-        p = plan_single(agents[aid].initial_position, agents[aid].initial_direction, agents[aid].target, ddl if ddl is not None else MAX_COST)
+        p = plan_single(agents[aid].initial_position, agents[aid].initial_direction, agents[aid].target, ddl if ddl is not None else 1 << 30)
         if len(p) == 0:
             p = [agents[aid].initial_position]
         path_all[aid] = p
-        reserve_path_in_tables(p, node_reserved, edge_reserved)
+        reserve_path(p)
     return path_all
 
 
@@ -210,7 +220,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
     # 재계획: 고장/실패 에이전트와 영향 받은 에이전트만 부분 재탐색
     from heapq import heappush, heappop
 
-    horizon = max_timestep if max_timestep and max_timestep > 0 else INFINITE_HORIZON
+    horizon = max_timestep if max_timestep and max_timestep > 0 else 10**9
 
     # 예약 테이블: 현재 시점 이후 고려
     node_reserved = {}
@@ -230,6 +240,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
             reserve_path(existing_paths[aid], current_timestep)
 
     # 실패/고장 대응 보강: 동시 돌진 방지 및 데드락 완화
+    K_HOLD = 3
     for aid in replan_set:
         cur_pos = agents[aid].position
         if cur_pos is None:
@@ -240,7 +251,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
         for tt in range(current_timestep + 1, min(horizon, current_timestep + K_HOLD) + 1):
             node_reserved.setdefault(tt, set()).add(cur_pos)
 
-
+    TABOO_TICKS = 5
     for aid in failed_agents:
         nxt_t = current_timestep + 1
         if nxt_t < len(existing_paths[aid]):
@@ -260,7 +271,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
     def heuristic(a: tuple, b: tuple) -> int:
         # 에러 방지: a나 b가 None일 경우 큰 값을 반환
         if a is None or b is None:
-            return MAX_COST
+            return 1 << 30
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def get_valid(x: int, y: int, d: int):
@@ -288,25 +299,26 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
                 s = (x, y, d, nt)
                 ng = g + 1
                 nh = heuristic((x, y), goal)
-                if ng < best_g.get(s, LARGE_G):
+                if ng < best_g.get(s, 1 << 60):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
+                    WAIT_PENALTY_LOCAL = 0.3
                     late_boost = 1.5 if late == 1 else 1.0
-                    heappush(open_heap, (ng + nh + WAIT_PENALTY * late_boost, late, nh, 2, ng, s))
+                    heappush(open_heap, (ng + nh + WAIT_PENALTY_LOCAL * late_boost, late, nh, 2, ng, s))
             # move
             valid = get_valid(x, y, d)
             for action in range(0, len(valid)):
                 if not valid[action]:
                     continue
                 nx, ny = step(x, y, action)
-                if is_conflict_in_tables((x, y), (nx, ny), t + 1, node_reserved, edge_reserved):
+                if is_conflict((x, y), (nx, ny), t + 1):
                     continue
                 s = (nx, ny, action, t + 1)
                 ng = g + 1
                 nh = heuristic((nx, ny), goal)
                 turn_bias = 0 if action == d else 1
-                if ng < best_g.get(s, LARGE_G):
+                if ng < best_g.get(s, 1 << 60):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
@@ -337,7 +349,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
         start_time = current_timestep + max(0, mal)
         h0 = heuristic(agent_pos, agents[aid].target)
         if ddl is None:
-            return MAX_COST
+            return 1 << 30
         return ddl - (start_time - current_timestep + h0)
     order.sort(key=lambda i: current_slack(i))
 
@@ -369,7 +381,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
         
         start_time = current_timestep + wait_steps
         ddl = getattr(agents[aid], 'deadline', None)
-        ddl_use = ddl if ddl is not None else MAX_COST
+        ddl_use = ddl if ddl is not None else 1 << 30
         
         if agent_pos is None or agents[aid].target is None:
             suffix = []
