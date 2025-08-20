@@ -34,16 +34,20 @@ test = 0
 #########################
 
 # Performance tuning constants and helpers
-# 대기 패널티는 혼잡 시 전체 지연을 줄이기 위해 소폭 상향 (재현성/DDL 균형)
-WAIT_PENALTY = 0.22
+# 일관 코스트 정책 (대기 억제/진동 방지/혼잡 제어)
+WAIT_PENALTY = 0.32
 TURN_COST = 0.05
-LOCAL_HORIZON_PADDING = 256
-K_HOLD = 2  # 3→2로 감소: 과도한 대기 제약 완화
-TABOO_TICKS = 3  # 5→3으로 감소: 실패 셀 금지 기간 단축
+LOCAL_HORIZON_PADDING = 192
+K_HOLD = 2
+TABOO_TICKS = 3
 MAX_COST = 1 << 30
 LARGE_G = 1 << 60
 INFINITE_HORIZON = 10**9
-MAX_NODES = 100000  # 각 탐색에서 최대 확장 노드 수 캡
+MAX_NODES = 100000  # 기본 확장 캡(소규모)
+CONGESTION_COST = 0.0  # 0이면 혼잡 비용 계산 생략
+CONGESTION_WINDOW = 6  # 혼잡도 계산 시간 창
+
+# (reserved for future adaptive constraints)
 
 # Global transition cache keyed by rail id
 _TRANSITION_CACHE = {}
@@ -77,7 +81,7 @@ def compute_dynamic_padding(estimated_distance: int, num_agents: int) -> int:
     base_padding = max(96, min(base_padding, 192))
     # 대규모 인스턴스 보호: 과도한 확장 방지
     if num_agents >= 50:
-        base_padding = min(base_padding, 128)
+        base_padding = min(base_padding, 112)
     return base_padding
 
 # Common helper functions
@@ -97,14 +101,60 @@ def reserve_path_in_tables(path: list, node_reserved: dict, edge_reserved: dict,
         node_reserved.setdefault(t, set()).add(path[t])
         if t + 1 < len(path):
             edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
+    
+    # 목표 셀 soft-hold: 도착 직후 1틱 추가 점유 (꼬리물기 방지)
+    if len(path) > 0:
+        goal_pos = path[-1]
+        arrival_time = len(path) - 1 + from_t
+        soft_hold_time = arrival_time + 1
+        node_reserved.setdefault(soft_hold_time, set()).add(goal_pos)
 
-def is_conflict_in_tables(curr: tuple, nxt: tuple, t_next: int, node_reserved: dict, edge_reserved: dict) -> bool:
-    """Check if movement conflicts with reservations"""
+def is_conflict_in_tables(curr: tuple, nxt: tuple, t_next: int, node_reserved: dict, edge_reserved: dict, node_capacity: dict = None) -> bool:
+    """Check if movement conflicts with reservations or capacity limits"""
     if nxt in node_reserved.get(t_next, set()):
         return True
     if (nxt, curr) in edge_reserved.get(t_next, set()):
         return True
+    
+    # 교차로 용량 제한 체크 (노드별 용량이 1 초과일 때만 의미가 있음)
+    if node_capacity is not None:
+        max_capacity = node_capacity.get(nxt, 1)
+        if max_capacity > 1:
+            occupied = 1 if nxt in node_reserved.get(t_next, set()) else 0
+            if occupied >= max_capacity:
+                return True
+    
     return False
+
+def calculate_congestion_cost(pos: tuple, t: int, node_reserved: dict, edge_reserved: dict) -> float:
+    """계산: 향후 CONGESTION_WINDOW 틱 동안의 혼잡도"""
+    if CONGESTION_COST <= 0.0:
+        return 0.0
+    congestion_score = 0
+    for future_t in range(t, min(t + CONGESTION_WINDOW, t + 20)):  # 상한 20틱
+        congestion_score += len(node_reserved.get(future_t, set()))
+        if pos in node_reserved.get(future_t, set()):
+            congestion_score += 2  # 직접 충돌 가중
+    return congestion_score * CONGESTION_COST / CONGESTION_WINDOW
+
+def calculate_merge_risk(start: tuple, goal: tuple, rail: GridTransitionMap) -> int:
+    """합류 위험도 계산: 경로상 교차/합류 노드 개수 추정"""
+    if start is None or goal is None:
+        return 0
+    
+    # 간단한 맨해튼 경로상의 잠재 교차점 개수 추정
+    dx = abs(goal[0] - start[0])
+    dy = abs(goal[1] - start[1])
+    
+    # 교차/합류 위험 추정: 긴 경로일수록, 대각선 이동이 많을수록 위험
+    merge_risk = min(dx, dy) * 2 + abs(dx - dy)  # 대각선 + 직선 부분
+    
+    # 전체 거리 대비 정규화 (0~10 범위)
+    total_distance = dx + dy
+    if total_distance > 0:
+        merge_risk = min(10, int(merge_risk * 10 / total_distance))
+    
+    return merge_risk
 
 
 # This function return a list of location tuple as the solution.
@@ -115,6 +165,13 @@ def is_conflict_in_tables(curr: tuple, nxt: tuple, t_next: int, node_reserved: d
 def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
     # 우선순위 기반 다중 에이전트 계획: 예약 테이블 + 시간-공간 A*, DDL 우선순위 반영
     from heapq import heappush, heappop
+
+    # 전역 캐시/상태 초기화(에피소드마다)
+    try:
+        if _TRANSITION_CACHE:
+            _TRANSITION_CACHE.clear()
+    except Exception:
+        pass
 
     num_agents = len(agents)
     # DDL 기반 우선순위: slack = deadline - 최단거리(맨해튼). slack이 작은(급한) 에이전트 먼저
@@ -127,19 +184,23 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
         if ddl is None:
             return MAX_COST
         return ddl - h0
-    # slack 오름차순, tie-breaker: 거리 내림차순, malfunction 잔여시간 오름차순
+    # slack 오름차순, tie-breaker: 합류위험도, 거리 내림차순, malfunction 잔여시간 오름차순
     def sort_key(i: int):
         distance = manhattan(agents[i].initial_position, agents[i].target)
+        merge_risk = calculate_merge_risk(agents[i].initial_position, agents[i].target, rail)
         mal = 0
         try:
             mal = int(agents[i].malfunction_data.get("malfunction", 0))
         except Exception:
             mal = 0
-        return (slack_for(i), -distance, mal)
+        return (slack_for(i), merge_risk, -distance, mal)
     priorities.sort(key=sort_key)
 
     horizon = max_timestep if max_timestep and max_timestep > 0 else INFINITE_HORIZON
     node_reserved, edge_reserved = create_reservation_system()
+    
+    # 교차로 용량 시스템: 모든 노드 기본 용량 1 (동시 진입 방지)
+    node_capacity = {}  # 필요시 특정 노드만 용량 설정
 
     def get_valid(x: int, y: int, d: int):
         return get_transitions_cached(rail, x, y, d)
@@ -150,7 +211,7 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
             return [start]
         open_heap = []
         h0 = heuristic(start, goal)
-        # 동적 로컬 지평선 계산
+        # 동적 로컬 지평선 계산 (대규모 인스턴스 보호 포함)
         local_padding = compute_dynamic_padding(h0, num_agents)
         local_horizon = min(horizon, h0 + local_padding)
         # (f, late_flag, h, turn_bias, g, state)
@@ -179,7 +240,12 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
-                    late_boost = 1.5 if late == 1 else 1.0
+                    # 데드라인 압박 반영(일관 정책)
+                    if deadline is not None:
+                        slack = deadline - (nt + nh)
+                        late_boost = 2.2 if slack <= 0 else (1.5 if slack <= 5 else 1.0)
+                    else:
+                        late_boost = 1.0
                     heappush(open_heap, (ng + nh + WAIT_PENALTY * late_boost, late, nh, 2, ng, s))
 
             # move
@@ -199,7 +265,12 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
                     parent[s] = (x, y, d, t)
                     late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
                     extra = 0.0 if action == d else TURN_COST
-                    heappush(open_heap, (ng + nh + extra, late, nh, turn_bias, ng, s))
+                    # 혼잡 비용 (활성화시에만 계산)
+                    if CONGESTION_COST > 0.0:
+                        congestion = calculate_congestion_cost((nx, ny), t + 1, node_reserved, edge_reserved)
+                    else:
+                        congestion = 0.0
+                    heappush(open_heap, (ng + nh + extra + congestion, late, nh, turn_bias, ng, s))
         if goal_state is None:
             return []
         rev = []
@@ -214,11 +285,13 @@ def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
     path_all = [[] for _ in range(num_agents)]
     for aid in priorities:
         ddl = getattr(agents[aid], 'deadline', None)
+
         p = plan_single(agents[aid].initial_position, agents[aid].initial_direction, agents[aid].target, ddl if ddl is not None else MAX_COST)
         if len(p) == 0:
             p = [agents[aid].initial_position]
         path_all[aid] = p
-        reserve_path_in_tables(p, node_reserved, edge_reserved)
+            
+        reserve_path_in_tables(path_all[aid], node_reserved, edge_reserved)
     return path_all
 
 
@@ -241,18 +314,17 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
     node_reserved = {}
     edge_reserved = {}
 
+    # 전역 예약 함수와 동일 동작으로 통일
+    # reserve_path 래퍼 삭제 예정: 호출부에서 전역 함수를 직접 사용
     def reserve_path(path: list, from_t: int):
-        for t in range(from_t, len(path)):
-            node_reserved.setdefault(t, set()).add(path[t])
-            if t + 1 < len(path):
-                edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
+        reserve_path_in_tables(path, node_reserved, edge_reserved, from_t)
 
     # 재계획 대상 외 에이전트는 경로 고정(현재 시점 이후 예약)
     num_agents = len(agents)
     replan_set = set(new_malfunction_agents) | set(failed_agents)
     for aid in range(num_agents):
         if aid not in replan_set:
-            reserve_path(existing_paths[aid], current_timestep)
+            reserve_path_in_tables(existing_paths[aid], node_reserved, edge_reserved, current_timestep)
 
     # 실패/고장 대응 보강: 동시 돌진 방지 및 데드락 완화
     for aid in replan_set:
@@ -275,18 +347,9 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
                 node_reserved.setdefault(tt, set()).add(nxt_cell)
             edge_reserved.setdefault(nxt_t, set()).add((curr_cell, nxt_cell))
 
-    def is_conflict(curr: tuple, nxt: tuple, t_next: int) -> bool:
-        if nxt in node_reserved.get(t_next, set()):
-            return True
-        if (nxt, curr) in edge_reserved.get(t_next, set()):
-            return True
-        return False
+    # 충돌 판정은 전역 is_conflict_in_tables를 사용합니다.
 
-    def heuristic(a: tuple, b: tuple) -> int:
-        # 에러 방지: a나 b가 None일 경우 큰 값을 반환
-        if a is None or b is None:
-            return MAX_COST
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+    # heuristic은 전역 함수를 사용
 
     def get_valid(x: int, y: int, d: int):
         return get_transitions_cached(rail, x, y, d)
@@ -313,7 +376,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
                 break
             # wait
             nt = t + 1
-            if nt <= local_horizon and not is_conflict((x, y), (x, y), nt):
+            if nt <= local_horizon and not is_conflict_in_tables((x, y), (x, y), nt, node_reserved, edge_reserved):
                 s = (x, y, d, nt)
                 ng = g + 1
                 nh = heuristic((x, y), goal)
@@ -410,7 +473,7 @@ def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: in
         new_path = base[:current_timestep+1] + suffix
 
         existing_paths[aid] = new_path
-        reserve_path(new_path, current_timestep)
+        reserve_path_in_tables(new_path, node_reserved, edge_reserved, current_timestep)
 
     return existing_paths
 
@@ -432,5 +495,3 @@ if __name__ == "__main__":
         test_cases.sort()
         deadline_files =  [test.replace(".pkl",".ddl") for test in test_cases]
         evaluator(get_path, test_cases, debug, visualizer, 3, deadline_files, replan = replan)
-
-
