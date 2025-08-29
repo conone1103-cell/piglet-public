@@ -1,4 +1,4 @@
-Of course. Here is the updated `README.md` that includes the project's current status and goals.
+Of course, here is the updated `README.md` reflecting the new details about the development process for Question 3.
 
 -----
 
@@ -8,21 +8,27 @@ This project involves solving pathfinding challenges within the Flatland 2D grid
 
 -----
 
-## 📊 Current Status
+## 📊 Project Overview & Status
 
-The current performance of the implemented solutions is as follows:
-
-  * **Question 1:** 100% (Perfect Score)
-  * **Question 2:** 100% (Perfect Score)
-  * **Question 3:** 69%
-
-The detailed performance metrics can be found in `log.txt`.
+  * **Question 1 & 2:** Solutions are complete and located in their respective files.
+  * **Question 3:** The primary task is to develop a high-performing solution in `question3.py`.
+      * An existing baseline solution with **69% performance** is backed up for reference in `org/question3_backup.py`.
+      * The detailed performance metrics of the baseline can be found in `log.txt`.
 
 -----
 
 ## 🎯 Goal
 
-The primary objective is to **improve the performance of the solution for Question 3**. This will be achieved by analyzing the existing code, optimizing the environment, and referencing relevant research papers and algorithms for pathfinding and multi-agent systems.
+The main objective is to **implement and improve the solution for Question 3** by analyzing the existing code, optimizing algorithms, and referencing relevant research.
+
+-----
+
+## ⚠️ Important Guidelines
+
+When working on the solution, the following rules are critical:
+
+1.  All development must be done within the `question3.py` file.
+2.  **Do not delete or modify any code sections that are explicitly marked with instructions not to be removed or changed.** Adhering to this constraint is mandatory.
 
 -----
 
