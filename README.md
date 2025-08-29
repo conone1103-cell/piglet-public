@@ -1,10 +1,28 @@
-Based on the information you've provided, here's a clear and effective `README.md` file. You can copy and paste this text directly into a new file named `README.md` in your project's root directory.
+Of course. Here is the updated `README.md` that includes the project's current status and goals.
 
 -----
 
 # Flatland Project
 
 This project involves solving pathfinding challenges within the Flatland 2D grid environment.
+
+-----
+
+## 📊 Current Status
+
+The current performance of the implemented solutions is as follows:
+
+  * **Question 1:** 100% (Perfect Score)
+  * **Question 2:** 100% (Perfect Score)
+  * **Question 3:** 69%
+
+The detailed performance metrics can be found in `log.txt`.
+
+-----
+
+## 🎯 Goal
+
+The primary objective is to **improve the performance of the solution for Question 3**. This will be achieved by analyzing the existing code, optimizing the environment, and referencing relevant research papers and algorithms for pathfinding and multi-agent systems.
 
 -----
 
