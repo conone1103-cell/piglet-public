@@ -1,61 +1,64 @@
-# Welcome to piglet
+Of course. Here is the updated `README.md` that includes the project's current status and goals.
 
-## Requirement
+-----
 
-python >= 3.6
+# Flatland Project
 
-## Install
+This project involves solving pathfinding challenges within the Flatland 2D grid environment.
 
-1. Clone the repo to your machine
-2. Run:
+-----
 
+## 📊 Current Status
+
+The current performance of the implemented solutions is as follows:
+
+  * **Question 1:** 100% (Perfect Score)
+  * **Question 2:** 100% (Perfect Score)
+  * **Question 3:** 69%
+
+The detailed performance metrics can be found in `log.txt`.
+
+-----
+
+## 🎯 Goal
+
+The primary objective is to **improve the performance of the solution for Question 3**. This will be achieved by analyzing the existing code, optimizing the environment, and referencing relevant research papers and algorithms for pathfinding and multi-agent systems.
+
+-----
+
+## ⚙️ Setup
+
+To run this project, you need to replicate the specific Conda environment.
+
+1.  **Create the Conda Environment**
+    Use the provided `environment.yml` file to create the necessary environment named `flatland-r1`.
+
+    ```bash
+    conda env create -f environment.yml
+    ```
+
+2.  **Activate the Environment**
+    Before running any scripts, activate the newly created environment.
+
+    ```bash
+    conda activate flatland-r1
+    ```
+
+-----
+
+## ▶️ Usage
+
+The main script is executed as follows. Make sure the `flatland-r1` environment is active.
+
+```bash
+python question3.py
 ```
-$ python setup.py install
-```
 
-## Usage
+-----
 
-### Commandline Interface
+## 📁 Project Structure
 
-```
-$ piglet.py --help
-```
+The map data required to run the tests are located in the following directories:
 
-run a scenario:
-```
-$ python3 piglet.py -p ./example/example_n_puzzle_scenario.scen -f graph -s uniform  
-```
-
-### Piglet Library
-piglet provides a variety of flexible search algorithms. These algorithms are 
-able to help you to build your application.
-
-#### Example 
-
-To use an algorithm you need a domain instance, an expander instance and a search instance. 
-```python
-import os,sys
-from lib_piglet.domains import gridmap
-from lib_piglet.expanders.grid_expander import grid_expander
-from lib_piglet.search.tree_search import tree_search
-from lib_piglet.utils.data_structure import bin_heap,stack,queue
-
-mapfile = "./example/gridmap/empty-16-16.map"
-
-# create an instance of gridmap domain
-gm = gridmap.gridmap(mapfile)
-
-# create an instance of grid_expander and pass the girdmap instance to the expander.
-expander = grid_expander(gm)
-
-# create an instance of tree_search, and pass an open list (we use a binary heap here)
-# and the expander to it.
-search = tree_search(bin_heap(), expander)
-
-# start search by proving a start state and goal state. For gridmap a state is a (x,y) tuple 
-solution = search.get_path((1,2),(10,2))
-
-# print solution
-print(solution)
-
-```
+  * `multi_test_case/`: Contains the map data for Question 3.
+  * `single_test_case/`: Contains the map data for Questions 1 and 2.
