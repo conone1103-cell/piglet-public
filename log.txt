@@ -1,0 +1,188 @@
+Results
+F (Q1)
+F (Q2)
+F (Q3)
+Q1 marks
+Q2 marks
+Q3 marks
+100%
+>100%
+69%
+15 / 15
+25 / 25
+42 / 60
+1–1 of 1
+
+Output
+Cloning repository
+Running evaluation
+Running Q1
+Test case          | Total agents | Agents done  | DDLs met     | Plan Time  | SIC          | Makespan     | Penalty      | Final SIC    | P Score     
+level_0/test_0     | 1            | 1            | 1            | 0.0        | 3            | 3            | 0            | 3            | 3           
+level_0/test_1     | 1            | 1            | 1            | 0.0        | 15           | 15           | 0            | 15           | 15          
+level_0/test_2     | 1            | 1            | 1            | 0.0        | 6            | 6            | 0            | 6            | 6           
+level_0/test_3     | 1            | 1            | 1            | 0.0        | 4            | 4            | 0            | 4            | 4           
+level_0/test_4     | 1            | 1            | 1            | 0.0        | 7            | 7            | 0            | 7            | 7           
+level_0/test_5     | 1            | 1            | 1            | 0.0        | 10           | 10           | 0            | 10           | 10          
+level_0/test_6     | 1            | 1            | 1            | 0.0        | 8            | 8            | 0            | 8            | 8           
+level_0/test_7     | 1            | 1            | 1            | 0.0        | 7            | 7            | 0            | 7            | 7           
+level_1/test_0     | 1            | 1            | 1            | 0.0        | 12           | 12           | 0            | 12           | 12          
+level_1/test_1     | 1            | 1            | 1            | 0.0        | 36           | 36           | 0            | 36           | 36          
+level_1/test_2     | 1            | 1            | 1            | 0.0        | 16           | 16           | 0            | 16           | 16          
+level_1/test_3     | 1            | 1            | 1            | 0.0        | 11           | 11           | 0            | 11           | 11          
+level_1/test_4     | 1            | 1            | 1            | 0.0        | 14           | 14           | 0            | 14           | 14          
+level_1/test_5     | 1            | 1            | 1            | 0.0        | 25           | 25           | 0            | 25           | 25          
+level_1/test_6     | 1            | 1            | 1            | 0.0        | 20           | 20           | 0            | 20           | 20          
+level_1/test_7     | 1            | 1            | 1            | 0.0        | 19           | 19           | 0            | 19           | 19          
+level_2/test_0     | 1            | 1            | 1            | 0.0        | 24           | 24           | 0            | 24           | 24          
+level_2/test_1     | 1            | 1            | 1            | 0.0        | 71           | 71           | 0            | 71           | 71          
+level_2/test_2     | 1            | 1            | 1            | 0.0        | 32           | 32           | 0            | 32           | 32          
+level_2/test_3     | 1            | 1            | 1            | 0.0        | 41           | 41           | 0            | 41           | 41          
+level_2/test_4     | 1            | 1            | 1            | 0.0        | 29           | 29           | 0            | 29           | 29          
+level_2/test_5     | 1            | 1            | 1            | 0.0        | 51           | 51           | 0            | 51           | 51          
+level_2/test_6     | 1            | 1            | 1            | 0.0        | 40           | 40           | 0            | 40           | 40          
+level_2/test_7     | 1            | 1            | 1            | 0.0        | 37           | 37           | 0            | 37           | 37          
+level_3/test_0     | 1            | 1            | 1            | 0.0        | 38           | 38           | 0            | 38           | 38          
+level_3/test_1     | 1            | 1            | 1            | 0.0        | 106          | 106          | 0            | 106          | 106         
+level_3/test_2     | 1            | 1            | 1            | 0.0        | 49           | 49           | 0            | 49           | 49          
+level_3/test_3     | 1            | 1            | 1            | 0.0        | 62           | 62           | 0            | 62           | 62          
+level_3/test_4     | 1            | 1            | 1            | 0.0        | 42           | 42           | 0            | 42           | 42          
+level_3/test_5     | 1            | 1            | 1            | 0.0        | 75           | 75           | 0            | 75           | 75          
+level_3/test_6     | 1            | 1            | 1            | 0.0        | 61           | 61           | 0            | 61           | 61          
+level_3/test_7     | 1            | 1            | 1            | 0.0        | 56           | 56           | 0            | 56           | 56          
+level_4/test_0     | 1            | 1            | 1            | 0.0        | 50           | 50           | 0            | 50           | 50          
+level_4/test_1     | 1            | 1            | 1            | 0.0        | 143          | 143          | 0            | 143          | 143         
+level_4/test_2     | 1            | 1            | 1            | 0.0        | 65           | 65           | 0            | 65           | 65          
+level_4/test_3     | 1            | 1            | 1            | 0.0        | 82           | 82           | 0            | 82           | 82          
+level_4/test_4     | 1            | 1            | 1            | 0.0        | 57           | 57           | 0            | 57           | 57          
+level_4/test_5     | 1            | 1            | 1            | 0.0        | 102          | 102          | 0            | 102          | 102         
+level_4/test_6     | 1            | 1            | 1            | 0.0        | 81           | 81           | 0            | 81           | 81          
+level_4/test_7     | 1            | 1            | 1            | 0.0        | 74           | 74           | 0            | 74           | 74          
+Summary            | 40 (sum)     | 40 (sum)     | 40(sum)      | 0.0(sum)   | 1681 (sum)   | 1681 (sum)   | 0 (sum)      | 1681 (sum)   | 42 (final)  
+Q1 completed with errors: Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Running Q2
+Test case          | Total agents | Agents done  | DDLs met     | Plan Time  | SIC          | Makespan     | Penalty      | Final SIC    | P Score     
+level_0/test_0     | 5            | 5            | 5            | 0.01       | 56           | 23           | 0            | 56           | 11          
+level_0/test_1     | 5            | 5            | 5            | 0.01       | 58           | 16           | 0            | 58           | 11          
+level_0/test_2     | 5            | 5            | 5            | 0.01       | 56           | 21           | 0            | 56           | 11          
+level_0/test_3     | 5            | 5            | 5            | 0.01       | 66           | 22           | 0            | 66           | 13          
+level_0/test_4     | 5            | 5            | 5            | 0.01       | 65           | 22           | 0            | 65           | 13          
+level_0/test_5     | 5            | 5            | 5            | 0.0        | 37           | 12           | 0            | 37           | 7           
+level_0/test_6     | 5            | 5            | 5            | 0.01       | 85           | 25           | 0            | 85           | 17          
+level_0/test_7     | 5            | 5            | 5            | 0.01       | 71           | 22           | 0            | 71           | 14          
+level_1/test_0     | 12           | 12           | 12           | 0.15       | 479          | 69           | 0            | 479          | 39          
+level_1/test_1     | 12           | 11           | 11           | 0.04       | 786          | 65           | 0            | 786          | 65          
+level_1/test_2     | 12           | 12           | 12           | 0.08       | 455          | 73           | 0            | 455          | 37          
+level_1/test_3     | 12           | 12           | 12           | 0.08       | 367          | 70           | 0            | 367          | 30          
+level_1/test_4     | 12           | 12           | 12           | 0.11       | 400          | 75           | 0            | 400          | 33          
+level_1/test_5     | 12           | 12           | 12           | 0.07       | 411          | 63           | 0            | 411          | 34          
+level_1/test_6     | 12           | 12           | 12           | 0.04       | 414          | 64           | 0            | 414          | 34          
+level_1/test_7     | 12           | 12           | 12           | 0.07       | 490          | 96           | 0            | 490          | 40          
+level_2/test_0     | 25           | 24           | 24           | 1.72       | 2801         | 135          | 0            | 2801         | 112         
+level_2/test_1     | 25           | 25           | 25           | 1.02       | 1745         | 109          | 0            | 1745         | 69          
+level_2/test_2     | 25           | 25           | 25           | 1.01       | 1652         | 124          | 0            | 1652         | 66          
+level_2/test_3     | 25           | 25           | 25           | 1.21       | 2094         | 176          | 0            | 2094         | 83          
+level_2/test_4     | 25           | 24           | 24           | 1.52       | 2935         | 165          | 0            | 2935         | 117         
+level_2/test_5     | 25           | 24           | 24           | 1.4        | 2741         | 203          | 0            | 2741         | 109         
+level_2/test_6     | 25           | 25           | 25           | 0.76       | 1653         | 101          | 0            | 1653         | 66          
+level_2/test_7     | 25           | 25           | 25           | 1.68       | 2157         | 151          | 0            | 2157         | 86          
+level_3/test_0     | 37           | 36           | 36           | 4.81       | 4967         | 206          | 0            | 4967         | 134         
+level_3/test_1     | 37           | 37           | 37           | 6.65       | 4289         | 236          | 0            | 4289         | 115         
+level_3/test_2     | 37           | 37           | 37           | 2.96       | 3886         | 210          | 0            | 3886         | 105         
+level_3/test_3     | 37           | 35           | 35           | 2.84       | 5987         | 214          | 0            | 5987         | 161         
+level_3/test_4     | 37           | 37           | 37           | 3.09       | 3811         | 195          | 0            | 3811         | 103         
+level_3/test_5     | 37           | 37           | 37           | 6.86       | 4498         | 241          | 0            | 4498         | 121         
+level_3/test_6     | 37           | 35           | 35           | 5.25       | 6297         | 218          | 0            | 6297         | 170         
+level_3/test_7     | 37           | 35           | 35           | 10.04      | 6967         | 213          | 0            | 6967         | 188         
+level_4/test_0     | 50           | 50           | 50           | 16.29      | 7611         | 267          | 0            | 7611         | 152         
+level_4/test_1     | 50           | 50           | 50           | 13.36      | 7268         | 233          | 0            | 7268         | 145         
+level_4/test_2     | 50           | 49           | 49           | 9.89       | 8232         | 247          | 0            | 8232         | 164         
+level_4/test_3     | 50           | 50           | 50           | 13.6       | 6986         | 258          | 0            | 6986         | 139         
+level_4/test_4     | 50           | 50           | 50           | 6.61       | 6200         | 232          | 0            | 6200         | 124         
+level_4/test_5     | 50           | 50           | 50           | 15.79      | 7431         | 298          | 0            | 7431         | 148         
+level_4/test_6     | 50           | 47           | 47           | 10.72      | 11656        | 292          | 0            | 11656        | 233         
+level_4/test_7     | 50           | 49           | 49           | 8.4        | 8223         | 266          | 0            | 8223         | 164         
+level_5/test_0     | 75           | 73           | 73           | 67.01      | 20066        | 524          | 0            | 20066        | 267         
+level_5/test_1     | 75           | 74           | 74           | 53.98      | 17995        | 365          | 0            | 17995        | 239         
+level_5/test_2     | 75           | 74           | 74           | 32.32      | 16282        | 434          | 0            | 16282        | 217         
+level_5/test_3     | 75           | 74           | 74           | 30.78      | 16429        | 455          | 0            | 16429        | 219         
+level_5/test_4     | 75           | 75           | 75           | 47.62      | 14017        | 359          | 0            | 14017        | 186         
+level_5/test_5     | 75           | 75           | 75           | 64.35      | 15433        | 375          | 0            | 15433        | 205         
+level_5/test_6     | 75           | 74           | 74           | 68.06      | 18040        | 406          | 0            | 18040        | 240         
+level_5/test_7     | 75           | 74           | 74           | 68.43      | 18038        | 369          | 0            | 18038        | 240         
+level_6/test_0     | 150          | 147          | 147          | 66.74      | 31877        | 362          | 0            | 31877        | 212         
+level_6/test_1     | 150          | 149          | 149          | 84.18      | 28009        | 380          | 0            | 28009        | 186         
+level_6/test_2     | 150          | 148          | 148          | 62.16      | 29779        | 422          | 0            | 29779        | 198         
+level_6/test_3     | 150          | 148          | 148          | 68.98      | 30174        | 292          | 0            | 30174        | 201         
+level_6/test_4     | 150          | 147          | 147          | 65.34      | 31087        | 296          | 0            | 31087        | 207         
+level_6/test_5     | 150          | 150          | 150          | 126.41     | 28728        | 381          | 0            | 28728        | 191         
+level_6/test_6     | 150          | 150          | 150          | 99.15      | 26283        | 404          | 0            | 26283        | 175         
+level_6/test_7     | 150          | 150          | 150          | 70.5       | 25577        | 309          | 0            | 25577        | 170         
+Summary            | 2832 (sum)   | 2798 (sum)   | 2798(sum)    | 1224.2(sum) | 494197 (sum) | 11861 (sum)  | 0 (sum)      | 494197 (sum) | None (final)
+Q2 completed with errors: Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+Running Q3
+Test case          | Total agents | Agents done  | DDLs met     | Plan Time  | SIC          | Makespan     | Penalty      | Final SIC    | P Score     
+level_0/test_0     | 5            | 5            | 4            | 0.01       | 56           | 23           | 0            | 56           | 11          
+level_0/test_1     | 5            | 5            | 5            | 0.01       | 58           | 16           | 0            | 58           | 11          
+level_0/test_2     | 5            | 5            | 4            | 0.01       | 56           | 21           | 1            | 57           | 11          
+level_0/test_3     | 5            | 5            | 5            | 0.01       | 66           | 22           | 0            | 66           | 13          
+level_0/test_4     | 5            | 5            | 5            | 0.01       | 65           | 22           | 0            | 65           | 13          
+level_0/test_5     | 5            | 5            | 5            | 0.0        | 37           | 12           | 0            | 37           | 7           
+level_0/test_6     | 5            | 5            | 4            | 0.01       | 88           | 35           | 10           | 98           | 19          
+level_0/test_7     | 5            | 5            | 5            | 0.01       | 71           | 23           | 0            | 71           | 14          
+level_1/test_0     | 12           | 12           | 11           | 0.13       | 467          | 60           | 3            | 470          | 39          
+level_1/test_1     | 12           | 12           | 10           | 0.07       | 394          | 55           | 26           | 420          | 35          
+level_1/test_2     | 12           | 12           | 11           | 0.09       | 455          | 73           | 7            | 462          | 38          
+level_1/test_3     | 12           | 12           | 12           | 0.1        | 368          | 72           | 0            | 368          | 30          
+level_1/test_4     | 12           | 10           | 10           | 0.14       | 1134         | 76           | 34           | 1168         | 97          
+level_1/test_5     | 12           | 9            | 8            | 0.1        | 1501         | 52           | 19           | 1520         | 126         
+level_1/test_6     | 12           | 11           | 10           | 0.14       | 832          | 84           | 41           | 873          | 72          
+level_1/test_7     | 12           | 7            | 7            | 0.25       | 2187         | 51           | 0            | 2187         | 182         
+level_2/test_0     | 25           | 23           | 21           | 1.67       | 3480         | 152          | 158          | 3638         | 145         
+level_2/test_1     | 25           | 25           | 20           | 1.21       | 1836         | 126          | 50           | 1886         | 75          
+level_2/test_2     | 25           | 25           | 24           | 1.15       | 1678         | 137          | 15           | 1693         | 67          
+level_2/test_3     | 25           | 20           | 18           | 1.29       | 5439         | 705          | 2784         | 8223         | 328         
+level_2/test_4     | 25           | 20           | 16           | 9.06999999999999 | 5911         | 209          | 570          | 6481         | 259         
+level_2/test_5     | 25           | 18           | 11           | 3.630000000000001 | 7090         | 203          | 647          | 7737         | 309         
+level_2/test_6     | 25           | 24           | 20           | 1.4200000000000004 | 2445         | 115          | 58           | 2503         | 100         
+level_2/test_7     | 25           | 23           | 19           | 2.8000000000000007 | 3599         | 167          | 217          | 3816         | 152         
+level_3/test_0     | 37           | 36           | 34           | 4.220000000000001 | 4890         | 220          | 46           | 4936         | 133         
+level_3/test_1     | 37           | 35           | 30           | 7.31       | 6818         | 301          | 446          | 7264         | 196         
+level_3/test_2     | 37           | 37           | 33           | 3.52       | 3910         | 183          | 89           | 3999         | 108         
+level_3/test_3     | 37           | 32           | 31           | 3.47       | 9217         | 204          | 222          | 9439         | 255         
+level_3/test_4     | 37           | 34           | 29           | 7.059999999999989 | 7403         | 245          | 349          | 7752         | 209         
+level_3/test_5     | 37           | 26           | 23           | 16.409999999999975 | 16172        | 252          | 1022         | 17194        | 464         
+level_3/test_6     | 37           | 25           | 23           | 19.43      | 16997        | 218          | 593          | 17590        | 475         
+level_3/test_7     | 37           | 26           | 25           | 18.129999999999974 | 16592        | 282          | 1033         | 17625        | 476         
+level_4/test_0     | 50           | 50           | 46           | 12.11      | 7568         | 330          | 65           | 7633         | 152         
+level_4/test_1     | 50           | 47           | 44           | 14.07      | 11579        | 252          | 176          | 11755        | 235         
+level_4/test_2     | 50           | 48           | 45           | 7.96       | 9468         | 254          | 185          | 9653         | 193         
+level_4/test_3     | 50           | 50           | 49           | 13.45      | 6961         | 271          | 32           | 6993         | 139         
+level_4/test_4     | 50           | 45           | 40           | 12.030000000000001 | 13753        | 275          | 673          | 14426        | 288         
+level_4/test_5     | 50           | 38           | 35           | 25.379999999999995 | 24452        | 329          | 1051         | 25503        | 510         
+level_4/test_6     | 50           | 41           | 34           | 21.249999999999986 | 20730        | 295          | 1406         | 22136        | 442         
+level_4/test_7     | 50           | 48           | 42           | 18.33999999999999 | 10149        | 365          | 653          | 10802        | 216         
+level_5/test_0     | 75           | 72           | 68           | 40.1       | 21424        | 361          | 82           | 21506        | 286         
+level_5/test_1     | 75           | 72           | 68           | 41.1       | 22200        | 475          | 519          | 22719        | 302         
+level_5/test_2     | 75           | 75           | 70           | 29.58      | 13893        | 432          | 132          | 14025        | 187         
+level_5/test_3     | 75           | 71           | 68           | 34.6       | 23336        | 440          | 834          | 24170        | 322         
+level_5/test_4     | 75           | 54           | 47           | 80.29999999999987 | 60544        | 472          | 5157         | 65701        | 876         
+level_5/test_5     | 75           | 66           | 61           | 81.05000000000003 | 35640        | 426          | 1204         | 36844        | 491         
+level_5/test_6     | 75           | 56           | 51           | 339.86999999999983 | 56626        | 427          | 1914         | 58540        | 780         
+level_5/test_7     | 75           | 60           | 55           | 77.84000000000005 | 48450        | 361          | 1447         | 49897        | 665         
+level_6/test_0     | 150          | 140          | 135          | 79.89999999999999 | 47011        | 362          | 1023         | 48034        | 320         
+level_6/test_1     | 150          | 149          | 145          | 87.05999999999999 | 27668        | 311          | 29           | 27697        | 184         
+level_6/test_2     | 150          | 148          | 140          | 80.46      | 29740        | 396          | 563          | 30303        | 202         
+level_6/test_3     | 150          | 150          | 141          | 80.26      | 25717        | 322          | 87           | 25804        | 172         
+level_6/test_4     | 150          | 121          | 114          | 94.97      | 88705        | 291          | 1721         | 90426        | 602         
+level_6/test_5     | 150          | 148          | 132          | 253.64     | 33096        | 326          | 668          | 33764        | 225         
+level_6/test_6     | 150          | 138          | 128          | 139.3399999999999 | 52809        | 354          | 1410         | 54219        | 361         
+level_6/test_7     | 150          | 118          | 110          | 143.10999999999993 | 96552        | 363          | 3683         | 100235       | 668         
+Summary            | 2832 (sum)   | 2559 (sum)   | 2361(sum)    | 1910.65(sum) | 909383 (sum) | 12906 (sum)  | 33154 (sum)  | 942537 (sum) | None (final)
+Q3 completed with errors: Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
