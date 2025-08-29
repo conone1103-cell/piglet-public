@@ -65,7 +65,7 @@ def compare_node_g(a: search_node, b:search_node):
 # Return true if a >= b
 def compare_node_f(a: search_node, b:search_node):
     if a.f_ == b.f_:
-        return random.choice([True, False])
+        return a.h_ >= b.h_
     return a.f_>=b.f_
 
 
@@ -73,3 +73,9 @@ def compare_node_f(a: search_node, b:search_node):
 # Return true if a >= b
 def compare_node_h(a: search_node, b:search_node):
     return a.h_>=b.h_
+
+
+
+
+
+    
