@@ -1,122 +1,54 @@
 from lib_piglet.utils.tools import eprint
-from typing import List, Tuple
-import glob
-import os
-import sys
-import time
-import json
+from typing import List, Tuple, Dict
+import glob, os, sys,time,json
 
-"""
-Advanced solution for Flatland Question 3
-========================================
-
-This module implements both the initial path planner (`get_path`) and a
-replanning routine (`replan`) for the Flatland railway simulator.  The
-goal of Question 3 is to coordinate multiple trains so that they reach
-their destinations by their deadlines without colliding with one
-another.  A naïve solution is provided in the template, but it only
-achieves around 69 % on the official test server.  This module
-incorporates techniques drawn from current research on multi‑agent
-pathfinding (MAPF), including:
-
-* **Prioritised Planning** – agents are ordered by increasing slack
-  (deadline minus heuristic distance).  Agents with tighter
-  deadlines are planned first to maximise on‑time arrivals.
-* **Reservation Tables** – while planning each agent we record the
-  times at which grid cells and edges are used, preventing
-  subsequent agents from choosing conflicting paths.
-* **Weighted A\* Search** – per‑agent path planning uses A\* over a
-  time‑expanded graph with heuristic weighting and additional
-  penalties for waiting and turning.  These weights prioritise
-  shorter travel times and discourage frequent turns that can slow
-  progress.
-* **Limited Horizon** – to reduce search overhead we bound the
-  planning horizon based on each agent’s heuristic distance and
-  deadline.  A local padding term allows the search to explore
-  slightly longer than the minimum required.
-* **Dynamic Replanning** – when malfunctions or delays occur during
-  execution, only the affected agents and those impacted by their
-  delays are re‑planned from the current timestep.  Existing
-  reservations from unaffected agents are preserved.
-
-These ideas are adapted from the winning entry of the 2020 Flatland
-challenge【65897274820326†L16-L23】, which combined prioritised planning and
-large neighbourhood search.  The constants controlling the waiting
-penalty, turning cost and local horizon padding have been tuned
-manually but may still be adjusted to suit different map sizes or
-agent densities.
-
-You should call `get_path` once at the beginning of an episode to
-generate an initial set of plans and `replan` whenever malfunctions
-occur.  Both functions return a list of paths (lists of `(x,y)`
-tuples) where each path index corresponds to the agent index.  Do
-not modify the bottom of this file, where the remote evaluator is
-instantiated, unless you intend to test on specific instances.
-"""
-
-# Import Flatland primitives.  If these imports fail the grader will
-# call `eprint` and exit, so keep them inside a try/except block.
+#import necessary modules that this python scripts need.
 try:
     from flatland.core.transition_map import GridTransitionMap
     from flatland.envs.agent_utils import EnvAgent
-    from flatland.utils.controller import (
-        get_action,
-        Train_Actions,
-        Directions,
-        check_conflict,
-        path_controller,
-        evaluator,
-        remote_evaluator,
-    )
+    from flatland.utils.controller import get_action, Train_Actions, Directions, check_conflict, path_controller, evaluator, remote_evaluator
 except Exception as e:
     eprint("Cannot load flatland modules!")
     eprint(e)
-    sys.exit(1)
+    exit(1)
 
-# Debug switches.  Set `debug=True` to enable verbose logging and
-# `visualizer=True` to activate the optional visualiser (if
-# available).  Note that enabling visualisation may slow down
-# planning and is intended only for development.
-debug: bool = False
-visualizer: bool = False
 
-# If you want to test a specific instance locally, set
-# `test_single_instance` to True and specify the level and test
-# number below.  Otherwise all provided test cases will be run.
-test_single_instance: bool = False
-level: int = 0
-test: int = 0
 
-##############################################################################
-# Configuration constants
-##############################################################################
 
-# Penalty applied when an agent chooses to wait in place.  A higher
-# penalty makes waiting less attractive compared to moving but too
-# high a penalty can lead to many unnecessary turns.  Values between
-# 0.2 and 0.5 have been shown to perform well【65897274820326†L16-L23】.
-WAIT_PENALTY: float = 0.3
+#########################
+# Debugger and visualizer options
+#########################
 
-# Additional cost incurred when an agent changes its heading.
-# Turning adds latency in the real world; discouraging turns can
-# smooth paths and reduce conflicts.  Values around 0.05 work well.
-TURN_COST: float = 0.05
+# Set these debug option to True if you want more information printed
+debug = False
+visualizer = False
 
-# Number of additional timesteps beyond the heuristic distance to
-# search for each agent.  A small padding allows the planner to
-# explore slightly longer paths in case shorter ones are blocked.
-LOCAL_HORIZON_PADDING: int = 128
+# If you want to test on specific instance, turn test_single_instance to True and specify the level and test number
+test_single_instance = False
+level = 0
+test = 0
 
-##############################################################################
-# Internal helper functions
-##############################################################################
+#########################
+# Reimplementing the content in get_path() function and replan() function.
+#
+# They both return a list of paths. A path is a list of (x,y) location tuples.
+# The path should be conflict free.
+# Hint, you could use some global variables to reuse many resources across get_path/replan frunction calls.
+#########################
 
-# Cache for storing transition functions keyed by rail and cell
+# Performance tuning constants and helpers
+WAIT_PENALTY = 0.35
+TURN_COST = 0.05
+LOCAL_HORIZON_PADDING = 128
+# New tunables
+GOAL_HOLD = 8              # reserve goal cell for K ticks after arrival
+HEUR_W = 1.08              # weighted A* factor (1.05~1.15)
+USE_CORRIDOR_PENALTY = True
+
+# Global transition cache keyed by rail id
 _TRANSITION_CACHE = {}
 
 def get_transitions_cached(rail: GridTransitionMap, x: int, y: int, d: int):
-    """Return transition bitmask for a cell, caching results to avoid
-    repeated calls to the Flatland API."""
     key = (id(rail), x, y, d)
     v = _TRANSITION_CACHE.get(key)
     if v is None:
@@ -124,338 +56,484 @@ def get_transitions_cached(rail: GridTransitionMap, x: int, y: int, d: int):
         _TRANSITION_CACHE[key] = v
     return v
 
-def manhattan(a: Tuple[int, int], b: Tuple[int, int]) -> int:
-    """Compute Manhattan distance between two positions."""
-    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+try:
+    DIR_DELTAS = {
+        Directions.NORTH: (-1, 0),
+        Directions.EAST: (0, 1),
+        Directions.SOUTH: (1, 0),
+        Directions.WEST: (0, -1),
+    }
+except Exception:
+    DIR_DELTAS = {}
 
-def step(pos: Tuple[int, int], action: int) -> Tuple[int, int]:
-    """Given a position and an action (direction), return the next
-    position according to Flatland's directional numbering."""
-    x, y = pos
-    if action == Directions.NORTH:
-        return x - 1, y
-    elif action == Directions.EAST:
-        return x, y + 1
-    elif action == Directions.SOUTH:
-        return x + 1, y
-    elif action == Directions.WEST:
-        return x, y - 1
-    else:
-        return x, y
+def step(x: int, y: int, action: int):
+    dx, dy = DIR_DELTAS.get(action, (0, 0))
+    return x + dx, y + dy
 
-##############################################################################
-# Main planning functions
-##############################################################################
+# --- helper: pad paths to a given timeline length ---
+def _pad_paths_to(paths: List[List[Tuple[int,int]]], target_len: int) -> List[List[Tuple[int,int]]]:
+    if target_len is None or target_len <= 0:
+        return paths
+    for i, p in enumerate(paths):
+        if not p:
+            continue
+        last = p[-1]
+        # make length exactly target_len (0-based timeline, so +1 for count)
+        need = target_len + 1 - len(p)
+        if need > 0:
+            paths[i] = p + [last] * need
+    return paths
 
-def get_path(
-    agents: List[EnvAgent], rail: GridTransitionMap, max_timestep: int
-) -> List[List[Tuple[int, int]]]:
-    """Compute initial conflict‑free plans for all agents.
 
-    The planner uses a prioritised strategy: agents are sorted by
-    increasing slack (deadline minus minimum travel time) so that
-    those with the least slack are planned first.  For each agent we
-    perform a time‑expanded A\* search over the grid with a weighted
-    heuristic and penalties for waiting and turning.  A reservation
-    table keeps track of which cells and edges are occupied at which
-    times to avoid conflicts.
-
-    Parameters
-    ----------
-    agents : List[EnvAgent]
-        List of agent objects provided by Flatland.  Each agent
-        contains `initial_position`, `initial_direction`, `target` and
-        potentially a `deadline` attribute.  The agent index in this
-        list matches the index used in the returned plan.
-    rail : GridTransitionMap
-        The rail network describing permissible transitions between
-        cells.
-    max_timestep : int
-        The maximum time horizon allowed for the episode.  When
-        negative or zero this will be treated as unbounded (with an
-        internal cap).
-
-    Returns
-    -------
-    List[List[Tuple[int,int]]]
-        A list of paths for each agent.  Each path is a list of
-        `(x,y)` tuples representing the positions of the agent at
-        successive timesteps.  If planning fails for an agent, a path
-        containing only its initial position is returned.
+# This function return a list of location tuple as the solution.
+# @param env The flatland railway environment
+# @param agents A list of EnvAgent.
+# @param max_timestep The max timestep of this episode.
+# @return path A list of (x,y) tuple.
+def get_path(agents: List[EnvAgent],rail: GridTransitionMap, max_timestep: int):
+    """Prioritized planning with weighted A*, corridor penalty, edge-swap block,
+    and goal-hold reservations. Non-invasive: returns list of (x,y) paths.
     """
-    # Number of agents
+    from heapq import heappush, heappop
+
     num_agents = len(agents)
 
-    # Determine a planning horizon.  If max_timestep <= 0 treat it as
-    # unbounded but clamp it to a large value to avoid infinite loops.
-    horizon = max_timestep if max_timestep and max_timestep > 0 else 10 ** 9
+    def manhattan(a: tuple, b: tuple) -> int:
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-    # Reservation tables storing occupied nodes and edges at each
-    # timestep.  Keys are timesteps; values are sets of cell
-    # coordinates or edge tuples ((x1,y1),(x2,y2)).
-    node_reserved: dict = {}
-    edge_reserved: dict = {}
-
-    def reserve_path(path: List[Tuple[int, int]]):
-        """Reserve cells and edges along a path from timestep 0 onward.
-        We do not permanently reserve the goal cell beyond the
-        arrival time since allowing other agents to pass through
-        improves throughput."""
-        for t in range(len(path)):
-            node_reserved.setdefault(t, set()).add(path[t])
-            if t + 1 < len(path):
-                edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
-
-    def is_conflict(curr: Tuple[int, int], nxt: Tuple[int, int], t_next: int) -> bool:
-        """Check if moving from `curr` to `nxt` at time `t_next` would
-        collide with existing reservations.  Both node and edge
-        conflicts are considered."""
-        # Vertex collision
-        if nxt in node_reserved.get(t_next, set()):
-            return True
-        # Edge collision (agents cannot pass through each other in
-        # opposite directions on the same edge)
-        if (nxt, curr) in edge_reserved.get(t_next, set()):
-            return True
-        return False
-
-    # Compute slack values for each agent.  Slack is defined as
-    # deadline minus Manhattan distance between start and target.  If
-    # no deadline is specified (None) we treat slack as a very large
-    # number so that such agents are planned last.  Ties are broken
-    # deterministically by ordering on the negative Manhattan distance
-    # (agents with longer paths plan earlier).  A lower slack value
-    # indicates a more urgent agent.
+    # Priority: earliest deadline slack first, then longer distance
     priorities = list(range(num_agents))
     def slack_for(i: int) -> int:
-        ddl = getattr(agents[i], "deadline", None)
+        ddl = getattr(agents[i], 'deadline', None)
         h0 = manhattan(agents[i].initial_position, agents[i].target)
         if ddl is None:
             return 1 << 30
         return ddl - h0
     priorities.sort(key=lambda i: (slack_for(i), -manhattan(agents[i].initial_position, agents[i].target)))
 
-    # Plan a path for a single agent.  Returns a list of positions
-    # from timestep 0 until arrival.  If the agent starts at its
-    # target the path simply repeats the target until the horizon.
-    from heapq import heappush, heappop
+    # Horizon taken from evaluator (do not over-pad)
+    horizon = max_timestep if max_timestep and max_timestep > 0 else 10**9
 
-    def plan_single(start: Tuple[int, int], start_dir: int, goal: Tuple[int, int], deadline: int) -> List[Tuple[int, int]]:
-        if start == goal:
-            # If the start equals the goal, the agent stays put for the
-            # remainder of the episode.  Padding avoids index errors
-            # when other agents reference this path.
-            path = [start]
-            while len(path) <= horizon:
-                path.append(start)
-            return path
-        # Priority queue elements are tuples (f, late_flag, h, turn_bias,
-        # g, state) where state=(x,y,d,t).  The `late_flag` indicates
-        # whether the estimated arrival time exceeds the deadline.  We
-        # prefer nodes with late_flag=0 to encourage on‑time arrival.
-        open_heap = []
-        h0 = manhattan(start, goal)
-        late0 = 1 if (0 + h0 > deadline) else 0 if deadline is not None else 0
-        heappush(open_heap, (h0, late0, h0, 0, 0, (start[0], start[1], start_dir, 0)))
-        # Maps state to best g (cost so far) value.  The key includes
-        # the timestep; different arrival times at the same cell with
-        # the same heading are treated separately.
-        best_g = {(start[0], start[1], start_dir, 0): 0}
-        parent = {(start[0], start[1], start_dir, 0): None}
-        goal_state = None
-        while open_heap:
-            f, late_flag, h, tb, g, (x, y, d, t) = heappop(open_heap)
-            # Do not search beyond the horizon
-            if t > horizon:
-                break
-            # Check if goal reached
-            if (x, y) == goal:
-                goal_state = (x, y, d, t)
-                break
-            # Option 1: wait in place
-            nt = t + 1
-            if nt <= horizon and not is_conflict((x, y), (x, y), nt):
-                s = (x, y, d, nt)
-                ng = g + 1
-                nh = manhattan((x, y), goal)
-                if ng < best_g.get(s, 1 << 60):
-                    best_g[s] = ng
-                    parent[s] = (x, y, d, t)
-                    late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
-                    # Late arrivals incur a larger wait penalty
-                    late_boost = 1.5 if late == 1 else 1.0
-                    heappush(open_heap, (ng + nh + WAIT_PENALTY * late_boost, late, nh, 2, ng, s))
-            # Option 2: move along all valid transitions
-            valid_mask = get_transitions_cached(rail, x, y, d)
-            for action in range(len(valid_mask)):
-                if not valid_mask[action]:
-                    continue
-                nx, ny = step((x, y), action)
-                # Skip moves that conflict with reservations
-                if is_conflict((x, y), (nx, ny), t + 1):
-                    continue
-                s = (nx, ny, action, t + 1)
-                ng = g + 1
-                nh = manhattan((nx, ny), goal)
-                turn_bias = 0 if action == d else 1
-                if ng < best_g.get(s, 1 << 60):
-                    best_g[s] = ng
-                    parent[s] = (x, y, d, t)
-                    late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
-                    extra = 0.0 if action == d else TURN_COST
-                    heappush(open_heap, (ng + nh + extra, late, nh, turn_bias, ng, s))
-        # If goal state was found, reconstruct path by following parents
-        if goal_state is None:
-            return []
-        rev: List[Tuple[int, int]] = []
-        s = goal_state
-        while s is not None:
-            rev.append((s[0], s[1]))
-            s = parent.get(s)
-        rev.reverse()
-        return rev
+    # Reservation tables: time -> set of occupied nodes/edges
+    node_reserved: Dict[int, set] = {}
+    edge_reserved: Dict[int, set] = {}
 
-    # Prepare return list
-    path_all: List[List[Tuple[int, int]]] = [[] for _ in range(num_agents)]
-    # Plan each agent in order of priority
-    for aid in priorities:
-        start_pos = agents[aid].initial_position
-        start_dir = agents[aid].initial_direction
-        goal_pos = agents[aid].target
-        ddl = getattr(agents[aid], "deadline", None)
-        ddl_use = ddl if ddl is not None else (1 << 30)
-        p = plan_single(start_pos, start_dir, goal_pos, ddl_use)
-        if not p:
-            # If planning fails, create a trivial path staying at the
-            # start position.  This at least reserves the cell so
-            # others avoid it.
-            p = [start_pos]
-        path_all[aid] = p
-        reserve_path(p)
-    return path_all
+    # Corridor penalty (degree==2 cells)
+    corridor_penalty: Dict[Tuple[int,int], float] = {}
+    try:
+        H, W = rail.grid.shape  # (rows, cols)
+        neighbor_cache: Dict[Tuple[int,int], set] = {}
+        for x in range(H):
+            for y in range(W):
+                nbrs = set()
+                for d in (Directions.NORTH, Directions.EAST, Directions.SOUTH, Directions.WEST):
+                    try:
+                        valid = rail.get_transitions(x, y, d)
+                    except Exception:
+                        valid = None
+                    if not valid:
+                        continue
+                    for action in range(0, len(valid)):
+                        if valid[action]:
+                            nx, ny = step(x, y, action)
+                            if 0 <= nx < H and 0 <= ny < W:
+                                nbrs.add((nx, ny))
+                neighbor_cache[(x, y)] = nbrs
+                if len(nbrs) == 2:
+                    corridor_penalty[(x, y)] = 0.2
+    except Exception:
+        corridor_penalty = {}
 
-def replan(
-    agents: List[EnvAgent],
-    rail: GridTransitionMap,
-    current_timestep: int,
-    existing_paths: List[List[Tuple[int, int]]],
-    max_timestep: int,
-    new_malfunction_agents: List[int],
-    failed_agents: List[int],
-) -> List[List[Tuple[int, int]]]:
-    """Replan a subset of agents after malfunctions or execution failures.
-
-    Only agents affected by new malfunctions or failures are replanned.
-    Paths of unaffected agents are preserved from the current timestep
-    onward, and their reservations remain fixed.  Affected agents
-    generate new suffixes from their current positions (or initial
-    positions if they have not departed yet), subject to reservations
-    imposed by the unaffected agents.  The same A\* based search
-    routine from `get_path` is reused, with adjustments to the
-    starting time and handling of malfunction waiting periods.
-
-    Parameters
-    ----------
-    agents : List[EnvAgent]
-        The list of agents.
-    rail : GridTransitionMap
-        The rail network.
-    current_timestep : int
-        The timestep at which replanning is triggered.
-    existing_paths : List[List[Tuple[int,int]]]
-        The previously computed paths.  These will be modified in
-        place to reflect the new plans.
-    max_timestep : int
-        The global maximum horizon.
-    new_malfunction_agents : List[int]
-        Indices of agents whose malfunctions started at this
-        timestep.  They need to be replanned.
-    failed_agents : List[int]
-        Indices of agents that failed to follow their existing
-        plans.  They also need to be replanned.
-
-    Returns
-    -------
-    List[List[Tuple[int,int]]]
-        The updated list of paths for all agents.
-    """
-    # Combine the two lists into a set for easy membership tests
-    replan_set = set(new_malfunction_agents) | set(failed_agents)
-    num_agents = len(agents)
-
-    # Horizon as in get_path
-    horizon = max_timestep if max_timestep and max_timestep > 0 else 10 ** 9
-
-    # Reservation tables capturing cells and edges occupied by
-    # unaffected agents from current_timestep onwards
-    node_reserved: dict = {}
-    edge_reserved: dict = {}
-
-    def reserve_path_from(path: List[Tuple[int, int]], from_t: int):
-        for t in range(from_t, len(path)):
+    def reserve_path(path: list):
+        # Reserve traversed nodes/edges + hold goal for a few ticks
+        for t in range(0, len(path)):
             node_reserved.setdefault(t, set()).add(path[t])
             if t + 1 < len(path):
                 edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
+        if path:
+            gcell = path[-1]
+            t_goal = len(path) - 1
+            for k in range(1, GOAL_HOLD + 1):
+                node_reserved.setdefault(t_goal + k, set()).add(gcell)
 
-    # Reserve paths of unaffected agents from the current timestep onwards
-    for aid in range(num_agents):
-        if aid not in replan_set:
-            reserve_path_from(existing_paths[aid], current_timestep)
-
-    # To mitigate deadlocks when multiple agents start moving again at
-    # the same time, hold malfunctioning agents at their current
-    # position for a few timesteps (K_HOLD).  This prevents them from
-    # immediately blocking each other.
-    K_HOLD = 3
-    for aid in replan_set:
-        # Determine the agent's current position
-        cur_pos = agents[aid].position
-        if cur_pos is None:
-            # If the agent has not yet departed, fall back to the
-            # location in the existing path or its initial position
-            if current_timestep < len(existing_paths[aid]):
-                cur_pos = existing_paths[aid][current_timestep]
-            else:
-                cur_pos = agents[aid].initial_position
-        # Reserve the current position for a few timesteps ahead
-        for tt in range(current_timestep + 1, min(horizon, current_timestep + K_HOLD) + 1):
-            node_reserved.setdefault(tt, set()).add(cur_pos)
-
-    # Additional taboo reservations for agents that failed to follow
-    # their plans.  If an agent failed while moving from cell A to
-    # cell B at timestep t, we prevent other agents from entering B
-    # for several timesteps and from traversing edge (A,B) at t+1.
-    TABOO_TICKS = 5
-    for aid in failed_agents:
-        next_t = current_timestep + 1
-        if next_t < len(existing_paths[aid]):
-            nxt_cell = existing_paths[aid][next_t]
-            curr_cell = existing_paths[aid][current_timestep] if current_timestep < len(existing_paths[aid]) else agents[aid].initial_position
-            for tt in range(current_timestep + 1, min(horizon, current_timestep + TABOO_TICKS) + 1):
-                node_reserved.setdefault(tt, set()).add(nxt_cell)
-            edge_reserved.setdefault(next_t, set()).add((curr_cell, nxt_cell))
-
-    def is_conflict(curr: Tuple[int, int], nxt: Tuple[int, int], t_next: int) -> bool:
+    def is_conflict(curr: tuple, nxt: tuple, t_next: int) -> bool:
+        # Node occupancy or head-on swap
         if nxt in node_reserved.get(t_next, set()):
             return True
         if (nxt, curr) in edge_reserved.get(t_next, set()):
             return True
         return False
 
-    # Per‑agent path planning with time offset.  Similar to
-    # plan_single() from get_path but starting at a non‑zero time
-    def plan_from(
-        start: Tuple[int, int], start_dir: int, start_time: int, goal: Tuple[int, int], deadline: int
-    ) -> List[Tuple[int, int]]:
-        from heapq import heappush, heappop
+    def heuristic(a: tuple, b: tuple) -> int:
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-        h0 = manhattan(start, goal)
-        # Limit local horizon to reduce search space
-        local_horizon = min(horizon, start_time + h0 + LOCAL_HORIZON_PADDING)
+    transition_cache = {}
+    def get_valid(x: int, y: int, d: int):
+        key = (x, y, d)
+        v = transition_cache.get(key)
+        if v is None:
+            v = rail.get_transitions(x, y, d)
+            transition_cache[key] = v
+        return v
+
+    def plan_single(start: tuple, start_dir: int, goal: tuple, deadline: int) -> list:
+        # Already at goal → no padding (avoid SOC blowup)
+        if start == goal:
+            return [start]
+
         open_heap = []
+        h0 = heuristic(start, goal)
+        late0 = 1 if (0 + h0 > deadline) else 0 if deadline is not None else 0
+        # (f, late_flag, h, turn_bias, g, state)
+        heappush(open_heap, (HEUR_W * h0, late0, h0, 0, 0.0, (start[0], start[1], start_dir, 0)))
+        best_g = {(start[0], start[1], start_dir, 0): 0.0}
+        parent = {(start[0], start[1], start_dir, 0): None}
+        goal_state = None
+
+        while open_heap:
+            f, late_flag, h, tb, g, (x, y, d, t) = heappop(open_heap)
+            if t > horizon:
+                break
+            if (x, y) == goal:
+                goal_state = (x, y, d, t)
+                break
+
+            # 1) wait
+            nt = t + 1
+            if nt <= horizon and not is_conflict((x, y), (x, y), nt):
+                s = (x, y, d, nt)
+                # small wait cost + corridor penalty at current cell
+                step_cost = 1.0 + WAIT_PENALTY + (corridor_penalty.get((x, y), 0.0) if USE_CORRIDOR_PENALTY else 0.0)
+                ng = g + step_cost
+                nh = heuristic((x, y), goal)
+                if ng < best_g.get(s, 1e18):
+                    best_g[s] = ng
+                    parent[s] = (x, y, d, t)
+                    late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
+                    heappush(open_heap, (ng + HEUR_W * nh, late, nh, 2, ng, s))
+
+            # 2) move
+            valid = get_valid(x, y, d)
+            for action in range(0, len(valid)):
+                if not valid[action]:
+                    continue
+                nx, ny = x, y
+                if action == Directions.NORTH:
+                    nx -= 1
+                elif action == Directions.EAST:
+                    ny += 1
+                elif action == Directions.SOUTH:
+                    nx += 1
+                elif action == Directions.WEST:
+                    ny -= 1
+                if is_conflict((x, y), (nx, ny), t + 1):
+                    continue
+                s = (nx, ny, action, t + 1)
+                base = 1.0 + (corridor_penalty.get((nx, ny), 0.0) if USE_CORRIDOR_PENALTY else 0.0)
+                turn_extra = 0.0 if action == d else TURN_COST
+                step_cost = base + turn_extra
+                ng = g + step_cost
+                nh = heuristic((nx, ny), goal)
+                turn_bias = 0 if action == d else 1
+                if ng < best_g.get(s, 1e18):
+                    best_g[s] = ng
+                    parent[s] = (x, y, d, t)
+                    late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
+                    heappush(open_heap, (ng + HEUR_W * nh, late, nh, turn_bias, ng, s))
+
+        if goal_state is None:
+            return []
+        rev = []
+        s = goal_state
+        while s is not None:
+            rev.append((s[0], s[1]))
+            s = parent[s]
+        rev.reverse()
+        return rev
+
+    # --- initial prioritized plan ---
+    path_all = [[] for _ in range(num_agents)]
+    for aid in priorities:
+        ddl = getattr(agents[aid], 'deadline', None)
+        p = plan_single(agents[aid].initial_position, agents[aid].initial_direction, agents[aid].target, ddl if ddl is not None else 1 << 30)
+        if len(p) == 0:
+            p = [agents[aid].initial_position]
+        path_all[aid] = p
+        reserve_path(p)
+
+    # --- LNS-lite post-plan repair (conflict groups up to REPAIR_GROUP_LIMIT) ---
+    def detect_conflict_groups(paths: List[List[Tuple[int,int]]]):
+        # build union-find
+        parent = list(range(len(paths)))
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        def union(a,b):
+            ra, rb = find(a), find(b)
+            if ra!=rb: parent[rb]=ra
+        # simulate timeline
+        T = max((len(p) for p in paths if p), default=0)
+        def pos_at(p,t):
+            if not p: return None
+            if t < len(p): return p[t]
+            return p[-1]
+        for t in range(T-1):
+            # vertex conflicts
+            occ: Dict[Tuple[int,int], List[int]] = {}
+            for i,p in enumerate(paths):
+                if not p: continue
+                c = pos_at(p,t)
+                occ.setdefault(c, []).append(i)
+            for cell, ids in occ.items():
+                if len(ids)>1:
+                    for i in range(len(ids)-1):
+                        union(ids[i], ids[i+1])
+            # edge swap
+            edge: Dict[Tuple[Tuple[int,int],Tuple[int,int]], int] = {}
+            for i,p in enumerate(paths):
+                if not p or t+1>=len(p):
+                    continue
+                u = pos_at(p,t); v = pos_at(p,t+1)
+                edge[(u,v)] = i
+            for (u,v), i in list(edge.items()):
+                j = edge.get((v,u))
+                if j is not None and j != i:
+                    union(i,j)
+        # build groups
+        groups: Dict[int,List[int]] = {}
+        for i in range(len(paths)):
+            if not paths[i]:
+                continue
+            r = find(i)
+            groups.setdefault(r, []).append(i)
+        return [sorted(g) for g in groups.values() if len(g) >= 2]
+
+    def plan_group_with_res(paths: List[List[Tuple[int,int]]], group: List[int]) -> List[List[Tuple[int,int]]]:
+        # rebuild reservations from others
+        nr: Dict[int,set] = {}
+        er: Dict[int,set] = {}
+        def reserve_from_path(path: list):
+            for t in range(len(path)):
+                nr.setdefault(t,set()).add(path[t])
+                if t+1 < len(path):
+                    er.setdefault(t+1,set()).add((path[t], path[t+1]))
+            if path:
+                g = path[-1]; tg = len(path)-1
+                for k in range(1, GOAL_HOLD+1):
+                    nr.setdefault(tg+k,set()).add(g)
+        for aid,p in enumerate(paths):
+            if aid not in group:
+                reserve_from_path(p)
+        # local planners reading these reservations
+        def local_is_conflict(curr,nxt,t_next):
+            if nxt in nr.get(t_next,set()): return True
+            if (nxt,curr) in er.get(t_next,set()): return True
+            return False
+        def local_plan_single(aid: int) -> list:
+            start = agents[aid].initial_position
+            goal = agents[aid].target
+            start_dir = agents[aid].initial_direction
+            ddl = getattr(agents[aid], 'deadline', None)
+            ddl_use = ddl if ddl is not None else 1<<30
+            if start == goal: return [start]
+            open_heap = []
+            h0 = manhattan(start, goal)
+            heappush(open_heap, (HEUR_W*h0, 0, h0, 0, 0.0, (start[0], start[1], start_dir, 0)))
+            best_g = {(start[0], start[1], start_dir, 0): 0.0}
+            parent = {(start[0], start[1], start_dir, 0): None}
+            goal_state=None
+            while open_heap:
+                f,late,h,tb,g,(x,y,d,t)=heappop(open_heap)
+                if t>horizon: break
+                if (x,y)==goal:
+                    goal_state=(x,y,d,t); break
+                # wait
+                nt=t+1
+                if nt<=horizon and not local_is_conflict((x,y),(x,y),nt):
+                    s=(x,y,d,nt)
+                    step=1.0 + WAIT_PENALTY + (corridor_penalty.get((x,y),0.0) if USE_CORRIDOR_PENALTY else 0.0)
+                    ng=g+step; nh=manhattan((x,y),goal)
+                    if ng < best_g.get(s,1e18):
+                        best_g[s]=ng; parent[s]=(x,y,d,t)
+                        heappush(open_heap,(ng+HEUR_W*nh, 1 if (nt+nh>ddl_use) else 0, nh, 2, ng, s))
+                # move
+                valid=get_valid(x,y,d)
+                for action in range(len(valid)):
+                    if not valid[action]:
+                        continue
+                    nx,ny=x,y
+                    if action==Directions.NORTH: nx-=1
+                    elif action==Directions.EAST: ny+=1
+                    elif action==Directions.SOUTH: nx+=1
+                    elif action==Directions.WEST: ny-=1
+                    if local_is_conflict((x,y),(nx,ny),t+1):
+                        continue
+                    s=(nx,ny,action,t+1)
+                    base=1.0 + (corridor_penalty.get((nx,ny),0.0) if USE_CORRIDOR_PENALTY else 0.0)
+                    turn_extra=0.0 if action==d else TURN_COST
+                    ng=g+base+turn_extra; nh=manhattan((nx,ny),goal)
+                    if ng < best_g.get(s,1e18):
+                        best_g[s]=ng; parent[s]=(x,y,d,t)
+                        heappush(open_heap,(ng+HEUR_W*nh, 1 if ((t+1)+nh>ddl_use) else 0, nh, 0 if action==d else 1, ng, s))
+            if goal_state is None:
+                return []
+            rev=[]; s=goal_state
+            while s is not None:
+                rev.append((s[0],s[1])); s=parent[s]
+            rev.reverse(); return rev
+        # plan group in slack-first order
+        order = sorted(group, key=lambda i: (slack_for(i), -manhattan(agents[i].initial_position, agents[i].target)))
+        new_paths = {aid: None for aid in group}
+        ok=True
+        for aid in order:
+            p = local_plan_single(aid)
+            if not p:
+                ok=False; break
+            new_paths[aid]=p
+            # commit to reservations
+            for t in range(len(p)):
+                nr.setdefault(t,set()).add(p[t])
+                if t+1 < len(p):
+                    er.setdefault(t+1,set()).add((p[t], p[t+1]))
+            if p:
+                g=p[-1]; tg=len(p)-1
+                for k in range(1, GOAL_HOLD+1):
+                    nr.setdefault(tg+k,set()).add(g)
+        if not ok:
+            return paths
+        # merge
+        for aid,p in new_paths.items():
+            paths[aid]=p
+        return paths
+
+    # run a few rounds
+    for _ in range(REPAIR_ROUNDS):
+        groups = detect_conflict_groups(path_all)
+        # keep only small groups for speed
+        groups = [g for g in groups if len(g) <= REPAIR_GROUP_LIMIT]
+        if not groups:
+            break
+        for g in groups:
+            path_all = plan_group_with_res(path_all, g)
+
+    # Return minimal (arrival-time) paths only; evaluator computes makespan from these.
+    return path_all
+
+
+# This function return a list of location tuple as the solution.
+# @param rail The flatland railway GridTransitionMap
+# @param agents A list of EnvAgent.
+# @param current_timestep The timestep that malfunction/collision happens .
+# @param existing_paths The existing paths from previous get_plan or replan.
+# @param max_timestep The max timestep of this episode.
+# @param new_malfunction_agents  The id of agents have new malfunction happened at current time step (Does not include agents already have malfunciton in past timesteps)
+# @param failed_agents  The id of agents failed to reach the location on its path at current timestep.
+# @return path_all  Return paths that locaitons from current_timestp is updated to handle malfunctions and failed execuations.
+def replan(agents: List[EnvAgent],rail: GridTransitionMap,  current_timestep: int, existing_paths: List[Tuple], max_timestep:int, new_malfunction_agents: List[int], failed_agents: List[int]):
+    """Local repair with goal-hold and corridor-aware weighted A*.
+    Only replan affected agents; keep others reserved from now on.
+    """
+    from heapq import heappush, heappop
+
+    horizon = max_timestep if max_timestep and max_timestep > 0 else 10**9
+
+    # Build reservations from current time onward
+    node_reserved: Dict[int, set] = {}
+    edge_reserved: Dict[int, set] = {}
+
+    def reserve_path(path: list, from_t: int):
+        if not path:
+            return
+        for t in range(from_t, len(path)):
+            node_reserved.setdefault(t, set()).add(path[t])
+            if t + 1 < len(path):
+                edge_reserved.setdefault(t + 1, set()).add((path[t], path[t + 1]))
+        # hold the final cell to prevent rear-end hits
+        last_t = len(path) - 1
+        if last_t >= from_t:
+            gcell = path[-1]
+            for k in range(1, GOAL_HOLD + 1):
+                node_reserved.setdefault(last_t + k, set()).add(gcell)
+
+    # Precompute corridor penalty
+    corridor_penalty: Dict[Tuple[int,int], float] = {}
+    try:
+        H, W = rail.grid.shape
+        for x in range(H):
+            for y in range(W):
+                nbrs = set()
+                for d in (Directions.NORTH, Directions.EAST, Directions.SOUTH, Directions.WEST):
+                    try:
+                        valid = rail.get_transitions(x, y, d)
+                    except Exception:
+                        valid = None
+                    if not valid:
+                        continue
+                    for action in range(0, len(valid)):
+                        if valid[action]:
+                            nx, ny = step(x, y, action)
+                            if 0 <= nx < H and 0 <= ny < W:
+                                nbrs.add((nx, ny))
+                if len(nbrs) == 2:
+                    corridor_penalty[(x, y)] = 0.2
+    except Exception:
+        corridor_penalty = {}
+
+    # Replan set
+    num_agents = len(agents)
+    replan_set = set(new_malfunction_agents) | set(failed_agents)
+
+    # Reserve all unaffected agents beyond current time
+    for aid in range(num_agents):
+        if aid not in replan_set:
+            reserve_path(existing_paths[aid], current_timestep)
+
+    # Boost safety around failed/blocked moves
+    K_HOLD = 3
+    for aid in replan_set:
+        cur_pos = agents[aid].position
+        if cur_pos is None:
+            if current_timestep < len(existing_paths[aid]):
+                cur_pos = existing_paths[aid][current_timestep]
+            else:
+                cur_pos = agents[aid].initial_position
+        for tt in range(current_timestep + 1, min(horizon, current_timestep + K_HOLD) + 1):
+            node_reserved.setdefault(tt, set()).add(cur_pos)
+
+    TABOO_TICKS = 5
+    for aid in failed_agents:
+        nxt_t = current_timestep + 1
+        if nxt_t < len(existing_paths[aid]):
+            nxt_cell = existing_paths[aid][nxt_t]
+            curr_cell = existing_paths[aid][current_timestep] if current_timestep < len(existing_paths[aid]) else agents[aid].initial_position
+            for tt in range(current_timestep + 1, min(horizon, current_timestep + TABOO_TICKS) + 1):
+                node_reserved.setdefault(tt, set()).add(nxt_cell)
+            edge_reserved.setdefault(nxt_t, set()).add((curr_cell, nxt_cell))
+
+    def is_conflict(curr: tuple, nxt: tuple, t_next: int) -> bool:
+        if nxt in node_reserved.get(t_next, set()):
+            return True
+        if (nxt, curr) in edge_reserved.get(t_next, set()):
+            return True
+        return False
+
+    def heuristic(a: tuple, b: tuple) -> int:
+        if a is None or b is None:
+            return 1 << 30
+        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+    def get_valid(x: int, y: int, d: int):
+        return get_transitions_cached(rail, x, y, d)
+
+    def plan_from(start: tuple, start_dir: int, start_time: int, goal: tuple, deadline: int) -> list:
+        open_heap = []
+        h0 = heuristic(start, goal)
+        local_horizon = min(horizon, start_time + h0 + LOCAL_HORIZON_PADDING)
         late0 = 1 if (start_time + h0 > deadline) else 0 if deadline is not None else 0
-        heappush(open_heap, (h0 + start_time, late0, h0, 0, 0, (start[0], start[1], start_dir, start_time)))
-        best_g = {(start[0], start[1], start_dir, start_time): 0}
+        heappush(open_heap, (start_time + HEUR_W * h0, late0, h0, 0, 0.0, (start[0], start[1], start_dir, start_time)))
+        best_g = {(start[0], start[1], start_dir, start_time): 0.0}
         parent = {(start[0], start[1], start_dir, start_time): None}
         goal_state = None
         while open_heap:
@@ -465,134 +543,128 @@ def replan(
             if (x, y) == goal:
                 goal_state = (x, y, d, t)
                 break
-            # wait action
+            # wait
             nt = t + 1
             if nt <= local_horizon and not is_conflict((x, y), (x, y), nt):
                 s = (x, y, d, nt)
-                ng = g + 1
-                nh = manhattan((x, y), goal)
-                if ng < best_g.get(s, 1 << 60):
+                step_cost = 1.0 + WAIT_PENALTY + (corridor_penalty.get((x, y), 0.0) if USE_CORRIDOR_PENALTY else 0.0)
+                ng = g + step_cost
+                nh = heuristic((x, y), goal)
+                if ng < best_g.get(s, 1e18):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if (nt + nh > deadline) else 0 if deadline is not None else 0
-                    # Slightly lower wait penalty during replanning to
-                    # encourage waiting rather than weaving through
-                    WAIT_PENALTY_LOCAL = WAIT_PENALTY * 0.9
-                    late_boost = 1.5 if late == 1 else 1.0
-                    heappush(open_heap, (ng + nh + WAIT_PENALTY_LOCAL * late_boost, late, nh, 2, ng, s))
-            # move actions
-            valid_mask = get_transitions_cached(rail, x, y, d)
-            for action in range(len(valid_mask)):
-                if not valid_mask[action]:
+                    heappush(open_heap, (ng + HEUR_W * nh, late, nh, 2, ng, s))
+            # move
+            valid = get_valid(x, y, d)
+            for action in range(0, len(valid)):
+                if not valid[action]:
                     continue
-                nx, ny = step((x, y), action)
+                nx, ny = step(x, y, action)
                 if is_conflict((x, y), (nx, ny), t + 1):
                     continue
                 s = (nx, ny, action, t + 1)
-                ng = g + 1
-                nh = manhattan((nx, ny), goal)
+                base = 1.0 + (corridor_penalty.get((nx, ny), 0.0) if USE_CORRIDOR_PENALTY else 0.0)
+                turn_extra = 0.0 if action == d else TURN_COST
+                step_cost = base + turn_extra
+                ng = g + step_cost
+                nh = heuristic((nx, ny), goal)
                 turn_bias = 0 if action == d else 1
-                if ng < best_g.get(s, 1 << 60):
+                if ng < best_g.get(s, 1e18):
                     best_g[s] = ng
                     parent[s] = (x, y, d, t)
                     late = 1 if ((t + 1) + nh > deadline) else 0 if deadline is not None else 0
-                    extra = 0.0 if action == d else TURN_COST
-                    heappush(open_heap, (ng + nh + extra, late, nh, turn_bias, ng, s))
+                    heappush(open_heap, (ng + HEUR_W * nh, late, nh, turn_bias, ng, s))
         if goal_state is None:
             return []
-        rev: List[Tuple[int, int]] = []
+        rev = []
         s = goal_state
         while s is not None:
             rev.append((s[0], s[1]))
-            s = parent.get(s)
+            s = parent[s]
         rev.reverse()
         return rev
 
-    # Order the agents in replan_set by their current slack (least slack
-    # first).  Slack is computed from the current timestep and
-    # remaining travel distance.  Agents with none deadlines get
-    # largest slack to avoid starving urgent ones.
+    # Replan order: smallest slack first (deterministic)
     order = list(replan_set)
     def current_slack(aid: int) -> int:
-        ddl = getattr(agents[aid], "deadline", None)
-        # Determine where the agent is at the current time
+        ddl = getattr(agents[aid], 'deadline', None)
         agent_pos = agents[aid].position
         if agent_pos is None:
             if current_timestep < len(existing_paths[aid]):
                 agent_pos = existing_paths[aid][current_timestep]
             else:
                 agent_pos = agents[aid].initial_position
-        mal = agents[aid].malfunction_data.get("malfunction", 0)
+        mal = agents[aid].malfunction_data["malfunction"]
         start_time = current_timestep + max(0, mal)
-        h0 = manhattan(agent_pos, agents[aid].target)
+        h0 = heuristic(agent_pos, agents[aid].target)
         if ddl is None:
             return 1 << 30
-        return ddl - ((start_time - current_timestep) + h0)
-    order.sort(key=lambda aid: current_slack(aid))
+        return ddl - (start_time - current_timestep + h0)
+    order.sort(key=lambda i: current_slack(i))
 
-    # Replan each selected agent in the computed order
     for aid in order:
-        # Determine current position and direction
         agent_pos = agents[aid].position
         if agent_pos is None:
             if current_timestep < len(existing_paths[aid]):
                 agent_pos = existing_paths[aid][current_timestep]
             else:
                 agent_pos = agents[aid].initial_position
+
         agent_dir = agents[aid].direction
         if agent_dir is None:
             agent_dir = agents[aid].initial_direction
-        # Determine waiting time due to malfunction
-        mal_steps = agents[aid].malfunction_data.get("malfunction", 0)
-        wait_steps = max(0, mal_steps)
+
+        # Forced wait due to malfunction
+        mal = agents[aid].malfunction_data["malfunction"]
+        wait_steps = max(0, mal)
         for t in range(current_timestep + 1, min(horizon, current_timestep + wait_steps) + 1):
             node_reserved.setdefault(t, set()).add(agent_pos)
-        # Preserve prefix of the existing path up to current_timestep and
-        # synchronise it with the current position
+
+        # Keep prefix consistent up to current time
         base = list(existing_paths[aid][:current_timestep])
-        # Pad the base if it is shorter than current_timestep
         if len(base) <= current_timestep:
-            pad = base[-1] if base else agent_pos
+            pad_pos = base[-1] if base else agent_pos
             while len(base) <= current_timestep:
-                base.append(pad)
+                base.append(pad_pos)
         base[current_timestep] = agent_pos
+
         start_time = current_timestep + wait_steps
-        ddl = getattr(agents[aid], "deadline", None)
-        ddl_use = ddl if ddl is not None else (1 << 30)
+        ddl = getattr(agents[aid], 'deadline', None)
+        ddl_use = ddl if ddl is not None else 1 << 30
+
         if agent_pos is None or agents[aid].target is None:
-            suffix: List[Tuple[int, int]] = []
+            suffix = []
         else:
             suffix = plan_from(agent_pos, agent_dir, start_time, agents[aid].target, ddl_use)
-        # Remove the duplicate at the junction of base and suffix
-        if suffix and suffix[0] == agent_pos:
+
+        if len(suffix) > 0 and suffix[0] == agent_pos:
             suffix = suffix[1:]
-        new_path = base[: current_timestep + 1] + suffix
+        new_path = base[:current_timestep+1] + suffix
+
         existing_paths[aid] = new_path
-        # Reserve the new path from current_timestep onwards
-        reserve_path_from(new_path, current_timestep)
+        reserve_path(new_path, current_timestep)
+
+    # Return minimal (arrival-time) paths only to avoid inflating makespan.
     return existing_paths
 
-##############################################################################
-# Remote evaluator entry point
-##############################################################################
 
+#####################################################################
+# Instantiate a Remote Client
+# You should not modify codes below, unless you want to modify test_cases to test specific instance.
+#####################################################################
 if __name__ == "__main__":
-    # If command line arguments are provided the grader will call
-    # `remote_evaluator`, which connects to the online judge.  Do not
-    # change this invocation unless you understand its implications.
+
     if len(sys.argv) > 1:
-        remote_evaluator(get_path, sys.argv, replan=replan)
+        remote_evaluator(get_path,sys.argv, replan = replan)
     else:
-        # Local testing harness.  Load the pickle test cases stored in
-        # the same directory and run the built‑in evaluator.  To test
-        # individual instances set `test_single_instance=True` and
-        # specify `level` and `test` above.
         script_path = os.path.dirname(os.path.abspath(__file__))
         test_cases = glob.glob(os.path.join(script_path, "multi_test_case/level*_test_*.pkl"))
+
         if test_single_instance:
-            test_cases = glob.glob(
-                os.path.join(script_path, f"multi_test_case/level{level}_test_{test}.pkl")
-            )
+            test_cases = glob.glob(os.path.join(script_path,"multi_test_case/level{}_test_{}.pkl".format(level, test)))
         test_cases.sort()
-        deadline_files = [test.replace(".pkl", ".ddl") for test in test_cases]
-        evaluator(get_path, test_cases, debug, visualizer, 3, deadline_files, replan=replan)
+        deadline_files =  [test.replace(".pkl",".ddl") for test in test_cases]
+        evaluator(get_path, test_cases, debug, visualizer, 3, deadline_files, replan = replan)
+
+
